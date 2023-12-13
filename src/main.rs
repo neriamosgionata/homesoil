@@ -14,7 +14,9 @@ fn main() {
 
     Runtime::new().unwrap().block_on(async move {
         let mut server = Server::new(address).unwrap();
+
         println!("Server up on {}", address);
+
         server.run(
             |request| async move {
                 let res = path_handler(&request, get_handlers());
