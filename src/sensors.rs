@@ -14,9 +14,23 @@ use crate::schema::sensor_reads;
 use serde_json::from_str;
 
 pub fn register_sensor(payload: String) -> Result<Sensor> {
+    println!("Registering sensor: {}", payload);
+
     let conn = &mut connect()?;
 
     let new_sensor = from_str::<NewSensor>(&payload)?;
+
+    match sensors::table
+        .filter(sensor_type.like(&new_sensor.get_sensor_type()))
+        .filter(ip_address.like(&new_sensor.get_ip_address()))
+        .get_result(conn)
+    {
+        Ok(sensor) => {
+            println!("Sensor already registered: {:?}", sensor);
+            return Ok(sensor);
+        }
+        Err(_) => {}
+    }
 
     diesel::insert_into(sensors::table)
         .values(&new_sensor)
@@ -33,6 +47,8 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
 }
 
 pub fn read_sensor(payload: String) -> Result<SensorRead> {
+    println!("Reading sensor: {}", payload);
+
     let conn = &mut connect()?;
 
     let new_sensor_read = from_str::<NewSensorRead>(&payload)?;

@@ -2,6 +2,7 @@ use coap::Server;
 use tokio::runtime::Runtime;
 use homesoil::handlers::{get_handlers, path_handler};
 use dotenv::dotenv;
+use homesoil::db::connect;
 
 fn main() {
     println!("Hello, world!");
@@ -9,6 +10,13 @@ fn main() {
     dotenv().ok();
 
     let address = "127.0.0.1:5683";
+
+    match connect() {
+        Ok(_) => {}
+        Err(e) => {
+            panic!("Error connecting to database: {}", e);
+        }
+    }
 
     println!("Connected to database");
 
