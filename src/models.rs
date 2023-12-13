@@ -8,7 +8,7 @@ pub struct Sensor {
     id: i32,
     sensor_type: String,
     ip_address: String,
-    name: String,
+    name: Option<String>,
 }
 
 impl Sensor {
@@ -17,7 +17,7 @@ impl Sensor {
             id,
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
-            name: "default".to_string(),
+            name: None,
         }
     }
 
@@ -33,7 +33,7 @@ impl Sensor {
         &self.ip_address
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &Option<String> {
         &self.name
     }
 }
@@ -44,7 +44,7 @@ impl Sensor {
 pub struct NewSensor {
     sensor_type: String,
     ip_address: String,
-    name: String,
+    name: Option<String>,
 }
 
 impl NewSensor {
@@ -52,7 +52,7 @@ impl NewSensor {
         Self {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
-            name: "default".to_string(),
+            name: None,
         }
     }
 
@@ -64,7 +64,7 @@ impl NewSensor {
         &self.ip_address
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn get_name(&self) -> &Option<String> {
         &self.name
     }
 }
