@@ -8,6 +8,7 @@ pub struct Sensor {
     id: i32,
     sensor_type: String,
     ip_address: String,
+    name: String,
 }
 
 impl Sensor {
@@ -16,6 +17,7 @@ impl Sensor {
             id,
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
+            name: "default".to_string(),
         }
     }
 
@@ -30,6 +32,10 @@ impl Sensor {
     pub fn get_ip_address(&self) -> &str {
         &self.ip_address
     }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
@@ -38,6 +44,7 @@ impl Sensor {
 pub struct NewSensor {
     sensor_type: String,
     ip_address: String,
+    name: String,
 }
 
 impl NewSensor {
@@ -45,6 +52,7 @@ impl NewSensor {
         Self {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
+            name: "default".to_string(),
         }
     }
 
@@ -54,6 +62,10 @@ impl NewSensor {
 
     pub fn get_ip_address(&self) -> &str {
         &self.ip_address
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -111,5 +123,28 @@ impl NewSensorRead {
 
     pub fn get_sensor_value(&self) -> &str {
         &self.sensor_value
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UpdateSensorName {
+    id: i32,
+    name: String,
+}
+
+impl UpdateSensorName {
+    pub fn new(id: i32, name: &str) -> Self {
+        Self {
+            id,
+            name: name.to_string(),
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 }

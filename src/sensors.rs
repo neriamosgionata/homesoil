@@ -4,12 +4,12 @@ use coap_lite::{CoapRequest, RequestType};
 use diesel::prelude::*;
 
 use crate::db::connect;
-use crate::models::{NewSensor, Sensor, SensorRead, NewSensorRead};
+use crate::models::{NewSensor, Sensor, SensorRead, NewSensorRead, UpdateSensorName};
 
-use crate::schema::sensors::dsl::*;
+use crate::schema::sensors::dsl::{id, ip_address, sensor_type, name};
 use crate::schema::sensors;
 
-use crate::schema::sensor_reads::dsl::*;
+use crate::schema::sensor_reads::dsl::{sensor_id, sensor_value};
 use crate::schema::sensor_reads;
 use serde_json::from_str;
 
@@ -40,6 +40,26 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
     let sensor = sensors::table
         .filter(sensor_type.like(&new_sensor.get_sensor_type()))
         .filter(ip_address.like(&new_sensor.get_ip_address()))
+        .get_result(conn)
+        .expect("Error loading sensor");
+
+    Ok(sensor)
+}
+
+pub fn change_sensor_name(payload: String) -> Result<Sensor> {
+    println!("Changing sensor name: {}", payload);
+
+    let conn = &mut connect()?;
+
+    let update_sensor_name = from_str::<UpdateSensorName>(&payload)?;
+
+    diesel::update(sensors::table.find(update_sensor_name.get_id()))
+        .set(name.eq(update_sensor_name.get_name()))
+        .execute(conn)
+        .expect("Error updating sensor");
+
+    let sensor = sensors::table
+        .filter(id.eq(update_sensor_name.get_id()))
         .get_result(conn)
         .expect("Error loading sensor");
 
@@ -110,6 +130,30 @@ pub fn sensor_read_handler() -> fn(&CoapRequest<SocketAddr>) -> String {
             }
             Err(e) => {
                 println!("Error reading sensor: {:?}", e);
+                "KO".to_string()
+            }
+        }
+    }
+}
+
+pub fn sensor_update_handler() -> fn(&CoapRequest<SocketAddr>) -> String {
+    |request: &CoapRequest<SocketAddr>| {
+        if request.get_method() != &RequestType::Put {
+            println!("Not a PUT request");
+            return "KO".to_string();
+        }
+
+        println!("PUT request");
+
+        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+
+        match change_sensor_name(payload) {
+            Ok(sensor) => {
+                println!("Sensor name changed: {:?}", sensor);
+                "OK".to_string()
+            }
+            Err(e) => {
+                println!("Error changing sensor name: {:?}", e);
                 "KO".to_string()
             }
         }
