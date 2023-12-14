@@ -1,16 +1,10 @@
-use coap::Server;
-use tokio::runtime::Runtime;
-use homesoil::handlers::{get_handlers, path_handler};
 use dotenv::dotenv;
 use homesoil::db::connect;
+use homesoil::servers::{run_coap_server, run_socket_server};
 
-fn main() {
-    println!("Hello, world!");
-
+#[tokio::main]
+async fn main() {
     dotenv().ok();
-
-    let address = "127.0.0.1:5683";
-
     match connect() {
         Ok(_) => {}
         Err(e) => {
@@ -18,33 +12,9 @@ fn main() {
         }
     }
 
-    println!("Connected to database");
+    let socket  = run_socket_server().await;
 
-    Runtime::new().unwrap().block_on(async move {
-        let mut server = Server::new(address).unwrap();
+    run_coap_server(&socket).await;
 
-        println!("Server up on {}", address);
-
-        server.run(
-            |request| async move {
-                let res = path_handler(&request, get_handlers());
-                match request.response {
-                    Some(mut message) => {
-                        match res {
-                            Some(payload) => {
-                                message.message.payload = payload.as_bytes().to_vec();
-                            }
-                            None => {
-                                message.message.payload = b"Error".to_vec();
-                            }
-                        }
-                        Some(message)
-                    }
-                    _ => None
-                }
-            },
-        )
-            .await
-            .expect("Failed to create server");
-    });
+    loop {}
 }
