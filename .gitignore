@@ -1,3 +1,4 @@
 /target
 mysql/
 .idea/
+.env
