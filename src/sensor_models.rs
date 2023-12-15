@@ -85,3 +85,13 @@ pub fn read_sensor(payload: String) -> Result<SensorRead> {
 
     Ok(sensor_read)
 }
+
+pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
+    let conn = &mut connect()?;
+
+    let sensors = sensors::table
+        .get_results::<Sensor>(conn)
+        .expect("Error loading sensors");
+
+    Ok(sensors)
+}

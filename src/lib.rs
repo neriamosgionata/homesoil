@@ -24,3 +24,5 @@ pub mod client;
 pub mod message;
 mod observer;
 pub mod server;
+
+pub mod socket;

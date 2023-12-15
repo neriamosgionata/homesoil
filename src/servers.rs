@@ -10,14 +10,16 @@ use axum::Router;
 use axum::Server as AxumServer;
 use socketioxide::extract::SocketRef;
 use tokio::runtime::Runtime;
+use crate::socket::register_all_callbacks;
 
 pub async fn run_socket_server() -> Result<SocketIo> {
     let address = env::var("SOCKET_IO_SERVER_ADDRESS").expect("SOCKET_IO_SERVER_ADDRESS must be set");
 
     let (layer, io) = SocketIo::new_layer();
 
-    io.ns("/", |_socket: SocketRef| {
-        println!("Socket connected : {:?}", _socket.id);
+    io.ns("/", |socket: SocketRef| {
+        println!("Socket connected : {:?}", socket.id);
+        register_all_callbacks(&socket);
     });
 
     spawn(move || {
