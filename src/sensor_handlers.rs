@@ -3,10 +3,10 @@ use coap_lite::{CoapRequest, RequestType};
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use serde_json::json;
-use socketioxide::extract::SocketRef;
+use socketioxide::SocketIo;
 use crate::sensor_models::{change_sensor_name, read_sensor, register_sensor};
 
-pub fn sensor_register_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
+pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
@@ -21,20 +21,25 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketRef, request: &'a CoapReque
             Ok(sensor) => {
                 println!("Registered sensor: {:?}", sensor);
 
-                match socket.emit(
-                    "sensor_register",
-                    json!({
-                             "sensor_id": sensor.get_id(),
-                             "sensor_name": sensor.get_name(),
-                             "sensor_ip_address": sensor.get_ip_address(),
-                          }),
-                ) {
-                    Ok(_) => {
-                        println!("Sensor name changed event emitted");
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.broadcast().emit(
+                            "sensor_register",
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                                    "sensor_name": sensor.get_name(),
+                                    "sensor_ip_address": sensor.get_ip_address(),
+                             }),
+                        ) {
+                            Ok(_) => {
+                                println!("Sensor register event emitted");
+                            }
+                            Err(e) => {
+                                println!("Error emitting sensor register event: {:?}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        println!("Error emitting sensor name changed event: {:?}", e);
-                    }
+                    None => {}
                 }
 
                 sensor.get_id().to_string()
@@ -48,7 +53,7 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketRef, request: &'a CoapReque
         .boxed()
 }
 
-pub fn sensor_read_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
+pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
@@ -63,17 +68,27 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest<S
             Ok(sensor_read) => {
                 println!("Sensor read received: {:?}", sensor_read);
 
-                match socket.emit("sensor_read", json!({
-                    "sensor_id": sensor_read.get_id(),
-                    "sensor_value": sensor_read.get_sensor_value(),
-                })) {
-                    Ok(_) => {
-                        println!("Sensor name changed event emitted");
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.broadcast().emit(
+                            "sensor_read",
+                            json!({
+                                    "sensor_id": sensor_read.get_id(),
+                                    "sensor_value": sensor_read.get_sensor_value(),
+                                }),
+                        )
+                        {
+                            Ok(_) => {
+                                println!("Sensor read event emitted");
+                            }
+                            Err(e) => {
+                                println!("Error emitting sensor read event: {:?}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        println!("Error emitting sensor name changed event: {:?}", e);
-                    }
+                    None => {}
                 }
+
 
                 "OK".to_string()
             }
@@ -86,7 +101,7 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest<S
         .boxed()
 }
 
-pub fn sensor_update_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
+pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         if request.get_method() != &RequestType::Put {
             println!("Not a PUT request");
@@ -101,17 +116,26 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketRef, request: &'a CoapRequest
             Ok(sensor) => {
                 println!("Sensor name changed: {:?}", sensor);
 
-                match socket.emit("sensor_name_changed", json!({
-                    "sensor_id": sensor.get_id(),
-                    "sensor_name": sensor.get_name(),
-                })) {
-                    Ok(_) => {
-                        println!("Sensor name changed event emitted");
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.broadcast().emit(
+                            "sensor_name_changed",
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                                    "sensor_name": sensor.get_name(),
+                                }),
+                        ) {
+                            Ok(_) => {
+                                println!("Sensor name changed event emitted");
+                            }
+                            Err(e) => {
+                                println!("Error emitting sensor name changed event: {:?}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        println!("Error emitting sensor name changed event: {:?}", e);
-                    }
+                    None => {}
                 }
+
 
                 "OK".to_string()
             }
