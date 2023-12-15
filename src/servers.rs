@@ -1,6 +1,7 @@
 use std::env;
 use std::net::SocketAddr;
 use std::thread::spawn;
+use std::time::Duration;
 use crate::handlers::path_handler;
 use crate::Server;
 use socketioxide::SocketIo;
@@ -8,14 +9,19 @@ use anyhow::Result;
 use axum::routing::get;
 use axum::Router;
 use axum::Server as AxumServer;
+use axum_util::cors::CorsLayer;
 use socketioxide::extract::SocketRef;
 use tokio::runtime::Runtime;
 use crate::socket::register_all_callbacks;
 
+
 pub async fn run_socket_server() -> Result<SocketIo> {
     let address = env::var("SOCKET_IO_SERVER_ADDRESS").expect("SOCKET_IO_SERVER_ADDRESS must be set");
 
-    let (layer, io) = SocketIo::new_layer();
+    let (layer, io) = SocketIo::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .req_path("/socket.io")
+        .build_layer();
 
     io.ns("/", |socket: SocketRef| {
         println!("Socket connected : {:?}", socket.id);
@@ -28,12 +34,17 @@ pub async fn run_socket_server() -> Result<SocketIo> {
             .block_on(async move {
                 let app = Router::new()
                     .route("/", get(|| async { "OK" }))
-                    .layer(layer);
+                    .layer(layer)
+                    .layer(CorsLayer);
+
+                println!("SocketIO server listening on {}", address);
 
                 AxumServer::bind(&address.clone().parse::<SocketAddr>().expect("Failed to parse SocketIO server address"))
                     .serve(app.into_make_service())
                     .await
                     .unwrap();
+
+                println!("SocketIO server stopped");
             });
     });
 

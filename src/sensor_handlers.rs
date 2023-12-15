@@ -5,6 +5,7 @@ use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
 use crate::sensor_models::{change_sensor_name, read_sensor, register_sensor};
+use crate::socket::{SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT};
 
 pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -24,7 +25,7 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
-                            "sensor_register",
+                            SENSOR_REGISTER_EVENT,
                             json!({
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),
@@ -71,7 +72,7 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
-                            "sensor_read",
+                            SENSOR_READ_EVENT,
                             json!({
                                     "sensor_id": sensor_read.get_id(),
                                     "sensor_value": sensor_read.get_sensor_value(),
@@ -119,7 +120,7 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
-                            "sensor_name_changed",
+                            SENSOR_NAME_CHANGE_EVENT,
                             json!({
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),

@@ -95,3 +95,14 @@ pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
 
     Ok(sensors)
 }
+
+pub fn get_sensor_readings(other_sensor_id: i32) -> Result<Vec<SensorRead>> {
+    let conn = &mut connect()?;
+
+    let sensor_reads = sensor_reads::table
+        .filter(sensor_id.eq(other_sensor_id))
+        .get_results::<SensorRead>(conn)
+        .expect("Error loading sensor reads");
+
+    Ok(sensor_reads)
+}
