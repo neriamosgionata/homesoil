@@ -8,11 +8,11 @@ const ALL_SENSORS_EVENT: &str = "all-sensors";
 
 pub fn register_all_callbacks(socket: &SocketRef) {
     let event_map = vec![
-        (ALL_SENSORS_EVENT, all_sensors_callback),
+        (GET_SENSORS_EVENT, all_sensors_callback),
     ];
 
     for (event, callback) in event_map.into_iter() {
-        socket.on(event, |socket| {
+        socket.on(event, move |socket| {
             callback(socket);
         });
     }
@@ -39,4 +39,4 @@ fn all_sensors_callback(socket: SocketRef) {
             println!("Error getting all sensors: {:?}", e);
         }
     }
-};
+}
