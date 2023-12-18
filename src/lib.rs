@@ -27,3 +27,5 @@ pub mod server;
 
 pub mod events;
 pub mod sensor_types;
+pub mod actuator_handlers;
+pub mod actuator_methods;

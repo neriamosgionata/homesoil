@@ -13,8 +13,9 @@ use axum_util::cors::CorsLayer;
 use serde_json::json;
 use socketioxide::extract::SocketRef;
 use tokio::runtime::Runtime;
+use crate::actuator_methods::get_all_registered_actuators;
 use crate::sensor_methods::{get_all_registered_sensors, get_all_last_sensor_readings};
-use crate::events::{ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
+use crate::events::{ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
 
 
 pub async fn run_socket_server() -> Result<SocketIo> {
@@ -57,6 +58,21 @@ pub async fn run_socket_server() -> Result<SocketIo> {
                     ALL_LAST_SENSOR_READINGS_EVENT,
                     json!({
                             "sensor_reads": sensor_reads,
+                        }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
+
+        match get_all_registered_actuators() {
+            Ok(actuators) => {
+                match socket.emit(
+                    ALL_ACTUATORS_EVENT,
+                    json!({
+                            "actuators": actuators,
                         }),
                 ) {
                     Ok(_) => {}

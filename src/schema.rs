@@ -27,3 +27,15 @@ diesel::allow_tables_to_appear_in_same_query!(
     sensors,
     sensor_reads,
 );
+
+diesel::table! {
+    actuators {
+        id -> Integer,
+        ip_address -> VarChar,
+        name -> Nullable<VarChar>,
+        online -> Bool,
+        state -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
+    }
+}

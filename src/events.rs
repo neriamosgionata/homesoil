@@ -2,9 +2,9 @@ use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
 use crate::sensor_methods::get_sensor_readings;
 
+//SENSORS
 pub const ALL_SENSORS_EVENT: &str = "all-sensors";
 pub const ALL_LAST_SENSOR_READINGS_EVENT: &str = "all-last-sensors-reads";
-
 pub const GET_SENSOR_READINGS_EVENT: &str = "get-sensor-readings";
 pub const ALL_SENSOR_READINGS_EVENT: &str = "all-sensor-reads";
 
@@ -12,6 +12,20 @@ pub const SENSOR_REGISTER_EVENT: &str = "sensor-register";
 pub const SENSOR_UNREGISTER_EVENT: &str = "sensor-unregister";
 pub const SENSOR_READ_EVENT: &str = "sensor-read";
 pub const SENSOR_NAME_CHANGE_EVENT: &str = "sensor-name-change";
+
+
+//ACTUATORS
+
+pub const ALL_ACTUATORS_EVENT: &str = "all-actuators";
+
+pub const ACTUATOR_REGISTER_EVENT: &str = "actuator-register";
+pub const ACTUATOR_UNREGISTER_EVENT: &str = "actuator-unregister";
+
+pub const TOGGLE_ACTUATOR_EVENT: &str = "toggle-actuator";
+
+pub const ACTUATOR_NAME_CHANGE_EVENT: &str = "actuator-name-change";
+pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
+
 
 pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
@@ -35,6 +49,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 }
                 Err(_) => {}
             }
+        },
+    );
+
+    socket.on(
+        TOGGLE_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<i32>| {
+            let actuator_id = data.0;
+
+            println!("Activate actuator: {:?}", actuator_id);
+
+            todo!();
         },
     );
 }
