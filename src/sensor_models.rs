@@ -8,7 +8,7 @@ use crate::models::{NewSensor, Sensor, SensorRead, NewSensorRead, UpdateSensorNa
 use crate::schema::sensors::dsl::{id, ip_address, sensor_type, name};
 use crate::schema::sensors;
 
-use crate::schema::sensor_reads::{dsl::{sensor_id, sensor_value}};
+use crate::schema::sensor_reads::dsl::{sensor_id, sensor_value, id as sensor_read_id};
 use crate::schema::sensor_reads;
 use serde_json::from_str;
 
@@ -169,6 +169,7 @@ pub fn get_sensor_readings(other_sensor_id: i32) -> Result<Vec<SensorRead>> {
 
     let sensor_reads = sensor_reads::table
         .filter(sensor_id.eq(other_sensor_id))
+        .order_by(sensor_read_id.desc())
         .get_results::<SensorRead>(conn)
         .expect("Error loading sensor reads");
 
