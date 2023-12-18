@@ -143,6 +143,14 @@ impl NewSensor {
     pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
         self.created_at = Some(created_at);
     }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    pub fn set_sensor_type(&mut self, sensor_type: String) {
+        self.sensor_type = sensor_type;
+    }
 }
 
 #[derive(Insertable, Deserialize, Serialize, Debug, Clone)]

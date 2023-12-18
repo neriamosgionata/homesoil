@@ -12,6 +12,11 @@ use crate::schema::sensor_reads::{dsl::{sensor_id, sensor_value}};
 use crate::schema::sensor_reads;
 use serde_json::from_str;
 
+const SENSOR_TYPE_CURRENT: &str = "current";
+const SENSOR_TYPE_TEMPERATURE: &str = "temperature";
+const SENSOR_TYPE_HUMIDITY: &str = "humidity";
+const SENSOR_TYPE_UNKNOWN: &str = "unknown";
+
 pub fn register_sensor(payload: String) -> Result<Sensor> {
     println!("Registering sensor: {}", payload);
 
@@ -31,6 +36,25 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
             return Ok(sensor);
         }
         Err(_) => {}
+    }
+
+    let sensor_t = new_sensor.get_sensor_type().to_string().to_lowercase();
+    let stc = SENSOR_TYPE_CURRENT.to_string();
+    let stt = SENSOR_TYPE_TEMPERATURE.to_string();
+    let sth = SENSOR_TYPE_HUMIDITY.to_string();
+
+    if sensor_t == stc {
+        new_sensor.set_name(Some("Current sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_CURRENT.to_string());
+    } else if sensor_t == stt {
+        new_sensor.set_name(Some("Temperature sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_TEMPERATURE.to_string());
+    } else if sensor_t == sth {
+        new_sensor.set_name(Some("Humidity sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_HUMIDITY.to_string());
+    } else {
+        new_sensor.set_name(Some("Unknown sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_UNKNOWN.to_string());
     }
 
     insert_into(sensors::table)
