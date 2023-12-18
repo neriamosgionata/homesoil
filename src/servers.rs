@@ -10,9 +10,11 @@ use axum::routing::get;
 use axum::Router;
 use axum::Server as AxumServer;
 use axum_util::cors::CorsLayer;
+use serde_json::json;
 use socketioxide::extract::SocketRef;
 use tokio::runtime::Runtime;
-use crate::socket::register_all_callbacks;
+use crate::sensor_models::{get_all_registered_sensors, get_all_sensor_readings};
+use crate::socket::{ALL_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
 
 
 pub async fn run_socket_server() -> Result<SocketIo> {
@@ -26,6 +28,40 @@ pub async fn run_socket_server() -> Result<SocketIo> {
     io.ns("/", |socket: SocketRef| {
         println!("Socket connected : {:?}", socket.id);
         register_all_callbacks(&socket);
+
+        socket.on_disconnect(|socket: SocketRef| {
+            println!("Socket disconnected : {:?}", socket.id);
+        });
+
+        match get_all_registered_sensors() {
+            Ok(sensors) => {
+                match socket.emit(
+                    ALL_SENSORS_EVENT,
+                    json!({
+                            "sensors": sensors,
+                        }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
+
+        match get_all_sensor_readings() {
+            Ok(sensor_reads) => {
+                match socket.emit(
+                    ALL_SENSOR_READINGS_EVENT,
+                    json!({
+                            "sensor_reads": sensor_reads,
+                        }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
     });
 
     spawn(move || {

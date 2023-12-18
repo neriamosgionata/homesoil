@@ -17,7 +17,9 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
 
     let conn = &mut connect()?;
 
-    let new_sensor = from_str::<NewSensor>(&payload)?;
+    let mut new_sensor = from_str::<NewSensor>(&payload)?;
+
+    new_sensor.set_created_at(chrono::Local::now().naive_local());
 
     match sensors::table
         .filter(sensor_type.like(&new_sensor.get_sensor_type()))
@@ -70,7 +72,9 @@ pub fn change_sensor_name(payload: String) -> Result<Sensor> {
 
     let conn = &mut connect()?;
 
-    let update_sensor_name = from_str::<UpdateSensorName>(&payload)?;
+    let mut update_sensor_name = from_str::<UpdateSensorName>(&payload)?;
+
+    update_sensor_name.set_updated_at(chrono::Local::now().naive_local());
 
     update(sensors::table.find(update_sensor_name.get_id()))
         .set(name.eq(update_sensor_name.get_name()))
@@ -90,7 +94,9 @@ pub fn read_sensor(payload: String) -> Result<SensorRead> {
 
     let conn = &mut connect()?;
 
-    let new_sensor_read = from_str::<NewSensorRead>(&payload)?;
+    let mut new_sensor_read = from_str::<NewSensorRead>(&payload)?;
+
+    new_sensor_read.set_created_at(chrono::Local::now().naive_local());
 
     insert_into(sensor_reads::table)
         .values(&new_sensor_read)
@@ -114,6 +120,16 @@ pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
         .expect("Error loading sensors");
 
     Ok(sensors)
+}
+
+pub fn get_all_sensor_readings() -> Result<Vec<SensorRead>> {
+    let conn = &mut connect()?;
+
+    let sensor_reads = sensor_reads::table
+        .get_results::<SensorRead>(conn)
+        .expect("Error loading sensor readings");
+
+    Ok(sensor_reads)
 }
 
 pub fn get_sensor_readings(other_sensor_id: i32) -> Result<Vec<SensorRead>> {

@@ -9,6 +9,8 @@ pub struct Sensor {
     sensor_type: String,
     ip_address: String,
     name: Option<String>,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
 }
 
 impl Sensor {
@@ -18,6 +20,8 @@ impl Sensor {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
             name: None,
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
         }
     }
 
@@ -36,36 +40,13 @@ impl Sensor {
     pub fn get_name(&self) -> &Option<String> {
         &self.name
     }
-}
 
-#[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
-#[diesel(table_name = crate::schema::sensors)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
-pub struct NewSensor {
-    sensor_type: String,
-    ip_address: String,
-    name: Option<String>,
-}
-
-impl NewSensor {
-    pub fn new(sensor_type: &str, ip_address: &str) -> Self {
-        Self {
-            sensor_type: sensor_type.to_string(),
-            ip_address: ip_address.to_string(),
-            name: None,
-        }
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
     }
 
-    pub fn get_sensor_type(&self) -> &str {
-        &self.sensor_type
-    }
-
-    pub fn get_ip_address(&self) -> &str {
-        &self.ip_address
-    }
-
-    pub fn get_name(&self) -> &Option<String> {
-        &self.name
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
     }
 }
 
@@ -77,6 +58,8 @@ pub struct SensorRead {
     id: i32,
     sensor_id: i32,
     sensor_value: String,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
 }
 
 impl SensorRead {
@@ -85,6 +68,8 @@ impl SensorRead {
             id,
             sensor_id,
             sensor_value: sensor_value.to_string(),
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
         }
     }
 
@@ -98,6 +83,65 @@ impl SensorRead {
 
     pub fn get_sensor_value(&self) -> &str {
         &self.sensor_value
+    }
+
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
+        self.created_at = created_at;
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+}
+
+//HELPERS
+
+#[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
+#[diesel(table_name = crate::schema::sensors)]
+#[diesel(check_for_backend(diesel::mysql::Mysql))]
+pub struct NewSensor {
+    sensor_type: String,
+    ip_address: String,
+    name: Option<String>,
+    created_at: Option<chrono::NaiveDateTime>,
+}
+
+impl NewSensor {
+    pub fn new(sensor_type: &str, ip_address: &str) -> Self {
+        Self {
+            sensor_type: sensor_type.to_string(),
+            ip_address: ip_address.to_string(),
+            name: None,
+            created_at: None,
+        }
+    }
+
+    pub fn get_sensor_type(&self) -> &str {
+        &self.sensor_type
+    }
+
+    pub fn get_ip_address(&self) -> &str {
+        &self.ip_address
+    }
+
+    pub fn get_name(&self) -> &Option<String> {
+        &self.name
+    }
+
+    pub fn get_created_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.created_at
+    }
+
+    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
+        self.created_at = Some(created_at);
     }
 }
 
@@ -107,6 +151,7 @@ impl SensorRead {
 pub struct NewSensorRead {
     sensor_id: i32,
     sensor_value: String,
+    created_at: Option<chrono::NaiveDateTime>,
 }
 
 impl NewSensorRead {
@@ -114,6 +159,7 @@ impl NewSensorRead {
         Self {
             sensor_id,
             sensor_value: sensor_value.to_string(),
+            created_at: None,
         }
     }
 
@@ -124,12 +170,21 @@ impl NewSensorRead {
     pub fn get_sensor_value(&self) -> &str {
         &self.sensor_value
     }
+
+    pub fn get_created_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.created_at
+    }
+
+    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
+        self.created_at = Some(created_at);
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UpdateSensorName {
     id: i32,
     name: String,
+    updated_at: Option<chrono::NaiveDateTime>,
 }
 
 impl UpdateSensorName {
@@ -137,6 +192,7 @@ impl UpdateSensorName {
         Self {
             id,
             name: name.to_string(),
+            updated_at: None,
         }
     }
 
@@ -146,6 +202,14 @@ impl UpdateSensorName {
 
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
     }
 }
 

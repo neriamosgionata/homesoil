@@ -4,7 +4,8 @@ use socketioxide::extract::{Data, SocketRef};
 use crate::sensor_models::{get_all_registered_sensors, get_sensor_readings};
 
 const GET_SENSORS_EVENT: &str = "get-sensors";
-const ALL_SENSORS_EVENT: &str = "all-sensors";
+pub const ALL_SENSORS_EVENT: &str = "all-sensors";
+pub const ALL_SENSOR_READINGS_EVENT: &str = "all-sensors-reads";
 
 const GET_SENSOR_READS_EVENT: &str = "get-sensor-reads";
 const SENSOR_READS_EVENT: &str = "sensor-reads";
@@ -21,8 +22,8 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     event_map.insert(GET_SENSOR_READS_EVENT.parse().unwrap(), sensor_data_callback);
 
     for (event, callback) in event_map.into_iter() {
-        socket.on(event, move |socket, data: Data<Value>| {
-            callback(socket, data);
+        socket.on(event, move |s2, data: Data<Value>| {
+            callback(s2, data);
         });
     }
 }
@@ -59,12 +60,15 @@ fn sensor_data_callback(socket: SocketRef, data: Data<Value>) {
         }
     };
 
+    let id_string = sensor_id.to_string();
+
     match get_sensor_readings(sensor_id as i32) {
         Ok(sensor_reads) => {
             match socket.emit(
                 SENSOR_READS_EVENT,
                 json!({
-                    "sensor_reads": sensor_reads,
+                     "sensor_reads": sensor_reads,
+                     "sensor_id": id_string,
                 }),
             ) {
                 Ok(_) => {

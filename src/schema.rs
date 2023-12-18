@@ -4,6 +4,8 @@ diesel::table! {
         sensor_type -> VarChar,
         ip_address -> VarChar,
         name -> Nullable<VarChar>,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
     }
 }
 
@@ -12,6 +14,8 @@ diesel::table! {
         id -> Integer,
         sensor_id -> Integer,
         sensor_value -> VarChar,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
     }
 }
 

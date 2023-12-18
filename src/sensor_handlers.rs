@@ -30,6 +30,7 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),
                                     "sensor_ip_address": sensor.get_ip_address(),
+                                    "created_at": sensor.get_created_at(),
                              }),
                         ) {
                             Ok(_) => {
@@ -119,8 +120,10 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
                         match ns.broadcast().emit(
                             SENSOR_READ_EVENT,
                             json!({
-                                    "sensor_id": sensor_read.get_id(),
+                                    "id": sensor_read.get_id(),
+                                    "sensor_id": sensor_read.get_sensor_id(),
                                     "sensor_value": sensor_read.get_sensor_value(),
+                                    "created_at": sensor_read.get_created_at(),
                                 }),
                         )
                         {
@@ -169,6 +172,7 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
                             json!({
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),
+                                    "updated_at": sensor.get_updated_at(),
                                 }),
                         ) {
                             Ok(_) => {
