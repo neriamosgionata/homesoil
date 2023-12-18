@@ -148,3 +148,18 @@ impl UpdateSensorName {
         &self.name
     }
 }
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct SensorUnregister {
+    id: i32,
+}
+
+impl SensorUnregister {
+    pub fn new(id: i32) -> Self {
+        Self { id }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+}

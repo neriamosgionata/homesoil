@@ -4,8 +4,8 @@ use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
-use crate::sensor_models::{change_sensor_name, read_sensor, register_sensor};
-use crate::socket::{SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT};
+use crate::sensor_models::{change_sensor_name, read_sensor, register_sensor, unregister_sensor};
+use crate::socket::{SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT, SENSOR_UNREGISTER_EVENT};
 
 pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -47,6 +47,51 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
             }
             Err(e) => {
                 println!("Error registering sensor: {:?}", e);
+                "KO".to_string()
+            }
+        }
+    }
+        .boxed()
+}
+
+pub fn sensor_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
+    async move {
+        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+
+        if request.get_method() != &RequestType::Post {
+            println!("Not a POST request");
+            return "KO".to_string();
+        }
+
+        println!("POST request");
+
+        match unregister_sensor(payload) {
+            Ok(sensor) => {
+                println!("Sensor unregistered: {:?}", sensor);
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.broadcast().emit(
+                            SENSOR_UNREGISTER_EVENT,
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                             }),
+                        ) {
+                            Ok(_) => {
+                                println!("Sensor unregister event emitted");
+                            }
+                            Err(e) => {
+                                println!("Error emitting sensor unregister event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+
+                sensor.get_id().to_string()
+            }
+            Err(e) => {
+                println!("Error unregistering sensor: {:?}", e);
                 "KO".to_string()
             }
         }

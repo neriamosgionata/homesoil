@@ -3,7 +3,7 @@ use diesel::{insert_into, update};
 use diesel::prelude::*;
 
 use crate::db::connect;
-use crate::models::{NewSensor, Sensor, SensorRead, NewSensorRead, UpdateSensorName};
+use crate::models::{NewSensor, Sensor, SensorRead, NewSensorRead, UpdateSensorName, SensorUnregister};
 
 use crate::schema::sensors::dsl::{id, ip_address, sensor_type, name};
 use crate::schema::sensors;
@@ -41,6 +41,26 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
         .filter(ip_address.like(&new_sensor.get_ip_address()))
         .get_result(conn)
         .expect("Error loading sensor");
+
+    Ok(sensor)
+}
+
+pub fn unregister_sensor(payload: String) -> Result<Sensor> {
+    println!("Registering sensor: {}", payload);
+
+    let conn = &mut connect()?;
+
+    let new_sensor = from_str::<SensorUnregister>(&payload)?;
+
+    let sensor = sensors::table
+        .filter(id.eq(new_sensor.get_id()))
+        .get_result::<Sensor>(conn)
+        .expect("Error loading sensor");
+
+    diesel::delete(sensors::table
+        .filter(id.eq(new_sensor.get_id())))
+        .execute(conn)
+        .expect("Error deleting sensor");
 
     Ok(sensor)
 }

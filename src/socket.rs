@@ -10,6 +10,7 @@ const GET_SENSOR_READS_EVENT: &str = "get-sensor-reads";
 const SENSOR_READS_EVENT: &str = "sensor-reads";
 
 pub const SENSOR_REGISTER_EVENT: &str = "sensor-register";
+pub const SENSOR_UNREGISTER_EVENT: &str = "sensor-unregister";
 pub const SENSOR_READ_EVENT: &str = "sensor-read";
 pub const SENSOR_NAME_CHANGE_EVENT: &str = "sensor-name-change";
 
