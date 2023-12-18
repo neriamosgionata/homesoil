@@ -59,6 +59,11 @@ pub fn unregister_sensor(payload: String) -> Result<Sensor> {
         .get_result::<Sensor>(conn)
         .expect("Error loading sensor");
 
+    diesel::delete(sensor_reads::table
+        .filter(sensor_id.eq(new_sensor.get_id())))
+        .execute(conn)
+        .expect("Error deleting sensor reads");
+
     diesel::delete(sensors::table
         .filter(id.eq(new_sensor.get_id())))
         .execute(conn)
