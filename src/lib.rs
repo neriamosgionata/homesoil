@@ -8,7 +8,7 @@ pub mod schema;
 
 pub mod servers;
 
-pub mod sensor_models;
+pub mod sensor_methods;
 
 pub mod sensor_handlers;
 

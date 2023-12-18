@@ -1,6 +1,6 @@
 use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
-use crate::sensor_models::get_sensor_readings;
+use crate::sensor_methods::get_sensor_readings;
 
 pub const ALL_SENSORS_EVENT: &str = "all-sensors";
 pub const ALL_LAST_SENSOR_READINGS_EVENT: &str = "all-last-sensors-reads";

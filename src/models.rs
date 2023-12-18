@@ -9,6 +9,7 @@ pub struct Sensor {
     sensor_type: String,
     ip_address: String,
     name: Option<String>,
+    online: bool,
     created_at: chrono::NaiveDateTime,
     updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -20,6 +21,7 @@ impl Sensor {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
             name: None,
+            online: false,
             created_at: chrono::Local::now().naive_local(),
             updated_at: None,
         }
@@ -47,6 +49,38 @@ impl Sensor {
 
     pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
         &self.updated_at
+    }
+
+    pub fn get_online(&self) -> bool {
+        self.online
+    }
+
+    pub fn set_online(&mut self, online: bool) {
+        self.online = online;
+    }
+
+    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
+        self.created_at = created_at;
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    pub fn set_sensor_type(&mut self, sensor_type: String) {
+        self.sensor_type = sensor_type;
+    }
+
+    pub fn set_ip_address(&mut self, ip_address: String) {
+        self.ip_address = ip_address;
+    }
+
+    pub fn set_id(&mut self, id: i32) {
+        self.id = id;
     }
 }
 
@@ -111,6 +145,7 @@ pub struct NewSensor {
     sensor_type: String,
     ip_address: String,
     name: Option<String>,
+    online: bool,
     created_at: Option<chrono::NaiveDateTime>,
 }
 
@@ -120,6 +155,7 @@ impl NewSensor {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
             name: None,
+            online: false,
             created_at: None,
         }
     }
@@ -150,6 +186,18 @@ impl NewSensor {
 
     pub fn set_sensor_type(&mut self, sensor_type: String) {
         self.sensor_type = sensor_type;
+    }
+
+    pub fn set_ip_address(&mut self, ip_address: String) {
+        self.ip_address = ip_address;
+    }
+
+    pub fn set_online(&mut self, online: bool) {
+        self.online = online;
+    }
+
+    pub fn get_online(&self) -> bool {
+        self.online
     }
 }
 

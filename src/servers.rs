@@ -13,7 +13,7 @@ use axum_util::cors::CorsLayer;
 use serde_json::json;
 use socketioxide::extract::SocketRef;
 use tokio::runtime::Runtime;
-use crate::sensor_models::{get_all_registered_sensors, get_all_last_sensor_readings};
+use crate::sensor_methods::{get_all_registered_sensors, get_all_last_sensor_readings};
 use crate::events::{ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
 
 

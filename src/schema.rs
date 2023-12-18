@@ -4,6 +4,7 @@ diesel::table! {
         sensor_type -> VarChar,
         ip_address -> VarChar,
         name -> Nullable<VarChar>,
+        online -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
     }

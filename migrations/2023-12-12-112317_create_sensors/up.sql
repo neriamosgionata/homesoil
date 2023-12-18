@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS `sensors`
     name        varchar(255) NULL     DEFAULT 'Default',
     sensor_type varchar(255) NOT NULL,
     ip_address  varchar(255) NOT NULL,
+    online      tinyint(1)   NOT NULL DEFAULT 0,
     created_at  timestamp    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  timestamp    NULL     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE = InnoDB

@@ -4,7 +4,7 @@ use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
-use crate::sensor_models::{change_sensor_name, read_sensor, register_sensor, unregister_sensor};
+use crate::sensor_methods::{change_sensor_name, read_sensor, register_sensor, unregister_sensor};
 use crate::events::{SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT, SENSOR_UNREGISTER_EVENT};
 
 pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
@@ -30,6 +30,8 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),
                                     "sensor_ip_address": sensor.get_ip_address(),
+                                    "sensor_type": sensor.get_sensor_type(),
+                                    "online": sensor.get_online(),
                                     "created_at": sensor.get_created_at(),
                              }),
                         ) {
