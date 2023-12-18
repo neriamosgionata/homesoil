@@ -12,10 +12,7 @@ use crate::schema::sensor_reads::dsl::{sensor_id, sensor_value, id as sensor_rea
 use crate::schema::sensor_reads;
 use serde_json::from_str;
 
-const SENSOR_TYPE_CURRENT: &str = "current";
-const SENSOR_TYPE_TEMPERATURE: &str = "temperature";
-const SENSOR_TYPE_HUMIDITY: &str = "humidity";
-const SENSOR_TYPE_UNKNOWN: &str = "unknown";
+use crate::sensor_types::{SENSOR_TYPE_CURRENT, SENSOR_TYPE_TEMPERATURE, SENSOR_TYPE_HUMIDITY, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_WIND_SPEED, SENSOR_TYPE_WIND_DIRECTION, SENSOR_TYPE_RAIN, SENSOR_TYPE_UV, SENSOR_TYPE_SOLAR_RADIATION, SENSOR_TYPE_UNKNOWN};
 
 pub fn register_sensor(payload: String) -> Result<Sensor> {
     println!("Registering sensor: {}", payload);
@@ -38,23 +35,38 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
         Err(_) => {}
     }
 
-    let sensor_t = new_sensor.get_sensor_type().to_string().to_lowercase();
-    let stc = SENSOR_TYPE_CURRENT.to_string();
-    let stt = SENSOR_TYPE_TEMPERATURE.to_string();
-    let sth = SENSOR_TYPE_HUMIDITY.to_string();
+    new_sensor.set_name(Some("Unknown sensor".to_string()));
+    new_sensor.set_sensor_type(SENSOR_TYPE_UNKNOWN.to_string());
 
-    if sensor_t == stc {
+    let sensor_t = new_sensor.get_sensor_type().to_string().to_lowercase();
+
+    if sensor_t == SENSOR_TYPE_CURRENT.to_string() {
         new_sensor.set_name(Some("Current sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_CURRENT.to_string());
-    } else if sensor_t == stt {
+    } else if sensor_t == SENSOR_TYPE_TEMPERATURE.to_string() {
         new_sensor.set_name(Some("Temperature sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_TEMPERATURE.to_string());
-    } else if sensor_t == sth {
+    } else if sensor_t == SENSOR_TYPE_HUMIDITY.to_string() {
         new_sensor.set_name(Some("Humidity sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_HUMIDITY.to_string());
-    } else {
-        new_sensor.set_name(Some("Unknown sensor".to_string()));
-        new_sensor.set_sensor_type(SENSOR_TYPE_UNKNOWN.to_string());
+    } else if sensor_t == SENSOR_TYPE_PRESSURE.to_string() {
+        new_sensor.set_name(Some("Pressure sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_PRESSURE.to_string());
+    } else if sensor_t == SENSOR_TYPE_WIND_SPEED.to_string() {
+        new_sensor.set_name(Some("Wind sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_WIND_SPEED.to_string());
+    } else if sensor_t == SENSOR_TYPE_WIND_DIRECTION.to_string() {
+        new_sensor.set_name(Some("Wind direction sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_WIND_DIRECTION.to_string());
+    } else if sensor_t == SENSOR_TYPE_RAIN.to_string() {
+        new_sensor.set_name(Some("Rain sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_RAIN.to_string());
+    } else if sensor_t == SENSOR_TYPE_UV.to_string() {
+        new_sensor.set_name(Some("UV sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_UV.to_string());
+    } else if sensor_t == SENSOR_TYPE_SOLAR_RADIATION.to_string() {
+        new_sensor.set_name(Some("Solar radiation sensor".to_string()));
+        new_sensor.set_sensor_type(SENSOR_TYPE_SOLAR_RADIATION.to_string());
     }
 
     insert_into(sensors::table)

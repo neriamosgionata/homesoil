@@ -26,3 +26,4 @@ mod observer;
 pub mod server;
 
 pub mod events;
+pub mod sensor_types;
