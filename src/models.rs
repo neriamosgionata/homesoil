@@ -1,4 +1,4 @@
-use diesel::{Identifiable, Insertable, Queryable, Selectable};
+use diesel::{Identifiable, Insertable, Queryable, QueryableByName, Selectable};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable)]
@@ -50,7 +50,7 @@ impl Sensor {
     }
 }
 
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable)]
+#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
 #[diesel(table_name = crate::schema::sensor_reads)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 #[diesel(belongs_to(Sensor))]
