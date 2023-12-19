@@ -36,10 +36,10 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
         Err(_) => {}
     }
 
+    let sensor_t = new_sensor.get_sensor_type().to_string().to_lowercase();
+
     new_sensor.set_name(Some("Unknown sensor".to_string()));
     new_sensor.set_sensor_type(SENSOR_TYPE_UNKNOWN.to_string());
-
-    let sensor_t = new_sensor.get_sensor_type().to_string().to_lowercase();
 
     if sensor_t == SENSOR_TYPE_CURRENT.to_string() {
         new_sensor.set_name(Some("Current sensor".to_string()));
