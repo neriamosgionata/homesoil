@@ -114,6 +114,8 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     Err(_) => {}
                 }
 
+                println!("Waiting 2 seconds");
+
                 std::thread::sleep(std::time::Duration::from_millis(2000));
 
                 uas.set_state(false);
