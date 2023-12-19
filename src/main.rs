@@ -1,8 +1,6 @@
-use std::thread::spawn;
 use dotenv::dotenv;
-use tokio::runtime::Runtime;
 use homesoil::db::connect;
-use homesoil::servers::{run_coap_server, run_socket_server};
+use homesoil::servers::{run_coap_server, run_sensor_health_check, run_socket_server};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,13 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("SocketIO server started");
 
-    spawn(move || {
-        println!("Starting CoAP server");
+    run_sensor_health_check(&io).await;
 
-        Runtime::new()
-            .expect("Failed to create Tokio runtime")
-            .block_on(run_coap_server(&io));
-    });
+    run_coap_server(&io).await;
 
     std::thread::park();
 

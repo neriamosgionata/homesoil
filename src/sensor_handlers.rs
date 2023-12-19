@@ -1,11 +1,18 @@
 use std::net::SocketAddr;
 use coap_lite::{CoapRequest, RequestType};
+use diesel::prelude::*;
+use diesel::{QueryDsl, update};
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
+use crate::CoAPClient;
+use crate::db::connect;
 use crate::sensor_methods::{change_sensor_name, read_sensor, register_sensor, unregister_sensor};
-use crate::events::{SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT, SENSOR_UNREGISTER_EVENT};
+use crate::events::{SENSOR_CHANGE_ONLINE_EVENT, SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT, SENSOR_UNREGISTER_EVENT};
+use crate::models::Sensor;
+use crate::schema::sensors;
+use crate::schema::sensors::{online, updated_at};
 
 pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -199,4 +206,49 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
         }
     }
         .boxed()
+}
+
+pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
+    let address = "coap://".to_owned() + sensor.get_ip_address() + ":" + sensor.get_port().to_string().as_str();
+
+    match CoAPClient::get(&address) {
+        Ok(_) => {
+            let conn = &mut connect().unwrap();
+
+            let uat = chrono::Local::now().naive_local();
+
+            update(sensors::table.find(sensor.get_id()))
+                .set((online.eq(true), updated_at.eq(uat)))
+                .execute(conn)
+                .expect("Error updating actuator");
+
+            socket.of("/").unwrap().broadcast().emit(
+                SENSOR_CHANGE_ONLINE_EVENT,
+                json!({
+                        "sensor_id": sensor.get_id(),
+                        "online": true,
+                        "updated_at": uat,
+                 }),
+            ).unwrap();
+        }
+        Err(_) => {
+            let conn = &mut connect().unwrap();
+
+            let uat = chrono::Local::now().naive_local();
+
+            update(sensors::table.find(sensor.get_id()))
+                .set((online.eq(false), updated_at.eq(uat)))
+                .execute(conn)
+                .expect("Error updating actuator");
+
+            socket.of("/").unwrap().broadcast().emit(
+                SENSOR_CHANGE_ONLINE_EVENT,
+                json!({
+                        "sensor_id": sensor.get_id(),
+                        "online": false,
+                        "updated_at": uat,
+                 }),
+            ).unwrap();
+        }
+    };
 }

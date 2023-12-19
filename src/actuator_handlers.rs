@@ -1,11 +1,18 @@
 use std::net::SocketAddr;
 use coap_lite::{CoapRequest, RequestType};
+use diesel::prelude::*;
+use diesel::update;
 use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
 use crate::actuator_methods::{change_actuator_name, change_actuator_state, register_actuator, unregister_actuator};
-use crate::events::{ACTUATOR_NAME_CHANGE_EVENT, ACTUATOR_REGISTER_EVENT, ACTUATOR_STATE_CHANGE_EVENT, ACTUATOR_UNREGISTER_EVENT};
+use crate::CoAPClient;
+use crate::db::connect;
+use crate::events::{ACTUATOR_CHANGE_ONLINE_EVENT, ACTUATOR_NAME_CHANGE_EVENT, ACTUATOR_REGISTER_EVENT, ACTUATOR_STATE_CHANGE_EVENT, ACTUATOR_UNREGISTER_EVENT};
+use crate::models::{Actuator};
+use crate::schema::actuators;
+use crate::schema::actuators::{online, updated_at};
 
 pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -200,4 +207,51 @@ pub fn actuator_update_state_handler<'a>(socket: &'a SocketIo, request: &'a Coap
         }
     }
         .boxed()
+}
+
+pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
+    let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
+
+    match CoAPClient::get(&address) {
+        Ok(_) => {
+            if !actuator.get_online() {
+                let conn = &mut connect().unwrap();
+
+                let uat = chrono::Local::now().naive_local();
+
+                update(actuators::table.find(actuator.get_id()))
+                    .set((online.eq(true), updated_at.eq(uat)))
+                    .execute(conn)
+                    .expect("Error updating actuator");
+
+                socket.of("/").unwrap().broadcast().emit(
+                    ACTUATOR_CHANGE_ONLINE_EVENT,
+                    json!({
+                            "actuator_id": actuator.get_id(),
+                            "online": true,
+                            "updated_at": uat,
+                     }),
+                ).unwrap();
+            }
+        }
+        Err(_) => {
+            let conn = &mut connect().unwrap();
+
+            let uat = chrono::Local::now().naive_local();
+
+            update(actuators::table.find(actuator.get_id()))
+                .set((online.eq(false), updated_at.eq(uat)))
+                .execute(conn)
+                .expect("Error updating actuator");
+
+            socket.of("/").unwrap().broadcast().emit(
+                ACTUATOR_CHANGE_ONLINE_EVENT,
+                json!({
+                        "actuator_id": actuator.get_id(),
+                        "online": false,
+                        "updated_at": uat,
+                 }),
+            ).unwrap();
+        }
+    };
 }

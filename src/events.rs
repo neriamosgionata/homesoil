@@ -20,6 +20,8 @@ pub const SENSOR_UNREGISTER_EVENT: &str = "sensor-unregister";
 pub const SENSOR_READ_EVENT: &str = "sensor-read";
 pub const SENSOR_NAME_CHANGE_EVENT: &str = "sensor-name-change";
 
+pub const SENSOR_CHANGE_ONLINE_EVENT: &str = "sensor-change-online";
+
 
 //ACTUATORS
 
@@ -33,6 +35,8 @@ pub const PULSE_ACTUATOR_EVENT: &str = "pulse-actuator";
 
 pub const ACTUATOR_NAME_CHANGE_EVENT: &str = "actuator-name-change";
 pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
+
+pub const ACTUATOR_CHANGE_ONLINE_EVENT: &str = "actuator-change-online";
 
 
 pub fn register_all_callbacks(socket: &SocketRef) {
