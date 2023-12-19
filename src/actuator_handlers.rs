@@ -31,6 +31,7 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                                     "actuator_name": actuator.get_name(),
                                     "actuator_ip_address": actuator.get_ip_address(),
                                     "actuator_port": actuator.get_port(),
+                                    "actuator_pulse": actuator.get_pulse(),
                                     "online": actuator.get_online(),
                                     "created_at": actuator.get_created_at(),
                              }),

@@ -115,9 +115,9 @@ pub fn change_actuator_state(payload: String) -> Result<Actuator> {
 pub fn get_all_registered_actuators() -> Result<Vec<Actuator>> {
     let conn = &mut connect()?;
 
-    let sensors = actuators::table
+    let actuators = actuators::table
         .get_results(conn)
         .expect("Error loading actuators");
 
-    Ok(sensors)
+    Ok(actuators)
 }

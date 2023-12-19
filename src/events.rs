@@ -114,7 +114,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     Err(_) => {}
                 }
 
-                std::thread::sleep(std::time::Duration::from_millis(750));
+                std::thread::sleep(std::time::Duration::from_millis(2000));
 
                 uas.set_state(false);
                 uas.set_updated_at(chrono::Local::now().naive_local());
