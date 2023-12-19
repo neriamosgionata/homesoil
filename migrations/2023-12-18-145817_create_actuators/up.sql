@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS `actuators`
     port       SMALLINT NOT NULL,
     state      TINYINT  NOT NULL DEFAULT 0,
     online     TINYINT  NOT NULL DEFAULT 0,
+    pulse      TINYINT  NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL
 );

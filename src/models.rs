@@ -160,6 +160,7 @@ pub struct Actuator {
     port: i16,
     state: bool,
     online: bool,
+    pulse: bool,
     created_at: chrono::NaiveDateTime,
     updated_at: Option<chrono::NaiveDateTime>,
 }
@@ -173,6 +174,7 @@ impl Actuator {
             name: None,
             online: false,
             state: true,
+            pulse: false,
             created_at: chrono::Local::now().naive_local(),
             updated_at: None,
         }
@@ -240,6 +242,14 @@ impl Actuator {
 
     pub fn get_port(&self) -> i16 {
         self.port
+    }
+
+    pub fn set_pulse(&mut self, pulse: bool) {
+        self.pulse = pulse;
+    }
+
+    pub fn get_pulse(&self) -> bool {
+        self.pulse
     }
 }
 
@@ -402,6 +412,7 @@ pub struct NewActuator {
     name: Option<String>,
     online: bool,
     state: bool,
+    pulse: bool,
     created_at: Option<chrono::NaiveDateTime>,
 }
 
@@ -413,6 +424,7 @@ impl NewActuator {
             name: None,
             online: false,
             state: false,
+            pulse: false,
             created_at: None,
         }
     }
@@ -463,6 +475,14 @@ impl NewActuator {
 
     pub fn get_port(&self) -> i16 {
         self.port
+    }
+
+    pub fn set_pulse(&mut self, pulse: bool) {
+        self.pulse = pulse;
+    }
+
+    pub fn get_pulse(&self) -> bool {
+        self.pulse
     }
 }
 
@@ -531,6 +551,10 @@ impl UpdateActuatorState {
 
     pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
         self.updated_at = Some(updated_at);
+    }
+
+    pub fn set_state(&mut self, state: bool) {
+        self.state = state;
     }
 }
 

@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use crate::db::connect;
 use crate::models::{NewActuator, UpdateActuatorName, SensorUnregister, Actuator, UpdateActuatorState};
 
-use crate::schema::actuators::dsl::{id, ip_address, name, port};
+use crate::schema::actuators::dsl::{id, ip_address, name, port, pulse};
 use crate::schema::actuators;
 
 use serde_json::from_str;
@@ -23,6 +23,7 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
     match actuators::table
         .filter(ip_address.like(&new_actuator.get_ip_address()))
         .filter(port.eq(&new_actuator.get_port()))
+        .filter(pulse.eq(&new_actuator.get_pulse()))
         .get_result(conn)
     {
         Ok(sensor) => {

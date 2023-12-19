@@ -8,6 +8,7 @@ diesel::table! {
         port -> SmallInt,
         state -> Bool,
         online -> Bool,
+        pulse -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
     }

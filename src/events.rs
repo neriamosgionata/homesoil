@@ -29,6 +29,7 @@ pub const ACTUATOR_REGISTER_EVENT: &str = "actuator-register";
 pub const ACTUATOR_UNREGISTER_EVENT: &str = "actuator-unregister";
 
 pub const TOGGLE_ACTUATOR_EVENT: &str = "toggle-actuator";
+pub const PULSE_ACTUATOR_EVENT: &str = "pulse-actuator";
 
 pub const ACTUATOR_NAME_CHANGE_EVENT: &str = "actuator-name-change";
 pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
@@ -55,6 +56,89 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }
                 }
                 Err(_) => {}
+            }
+        },
+    );
+
+    socket.on(
+        PULSE_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<i32>| {
+            let actuator_id = data.0;
+
+            let conn = &mut connect().unwrap();
+
+            println!("Pulsing actuator {:?}", actuator_id);
+
+            let actuator = actuators::table
+                .filter(id.eq(actuator_id))
+                .get_result::<Actuator>(conn)
+                .expect("Error loading actuator");
+
+            let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
+
+            println!("Actuator address: {:?}", address);
+
+            let response_actuator = match CoAPClient::post(&address, b"ON-PULSE".to_vec()) {
+                Ok(response) => response,
+                Err(_) => {
+                    println!("Error changing actuator state");
+                    return;
+                }
+            };
+
+            let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+
+            println!("Actuator response: {:?}", payload);
+
+            if payload == "ON-PULSE" {
+                let mut uas = UpdateActuatorState::new(actuator_id, true);
+
+                uas.set_updated_at(chrono::Local::now().naive_local());
+
+                update(actuators::table.find(actuator_id))
+                    .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
+                    .execute(conn)
+                    .expect("Error updating actuator");
+
+                println!("Actuator new state: {:?}", uas.get_state());
+
+                match s.emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                        "actuator_id": actuator.get_id(),
+                        "actuator_state": uas.get_state(),
+                        "updated_at": actuator.get_updated_at()
+                    }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(750));
+
+                uas.set_state(false);
+                uas.set_updated_at(chrono::Local::now().naive_local());
+
+                update(actuators::table.find(actuator_id))
+                    .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
+                    .execute(conn)
+                    .expect("Error updating actuator");
+
+                println!("Actuator new state: {:?}", uas.get_state());
+
+                match s.emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                            "actuator_id": actuator.get_id(),
+                            "actuator_state": uas.get_state(),
+                            "updated_at": actuator.get_updated_at()
+                        }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+            } else {
+                println!("Error changing actuator state");
             }
         },
     );
@@ -129,33 +213,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(_) => {}
-                }
-
-                if payload == "ON-PULSE" {
-                    std::thread::sleep(std::time::Duration::from_millis(750));
-
-                    let mut uas = UpdateActuatorState::new(actuator_id, false);
-
-                    uas.set_updated_at(chrono::Local::now().naive_local());
-
-                    update(actuators::table.find(actuator_id))
-                        .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
-                        .execute(conn)
-                        .expect("Error updating actuator");
-
-                    println!("Actuator new state: {:?}", uas.get_state());
-
-                    match s.emit(
-                        ACTUATOR_STATE_CHANGE_EVENT,
-                        json!({
-                            "actuator_id": actuator.get_id(),
-                            "actuator_state": uas.get_state(),
-                            "updated_at": actuator.get_updated_at()
-                        }),
-                    ) {
-                        Ok(_) => {}
-                        Err(_) => {}
-                    }
                 }
             } else {
                 println!("Error changing actuator state");
