@@ -4,7 +4,7 @@ use std::thread::spawn;
 use std::time::Duration;
 use crate::handlers::path_handler;
 use crate::Server;
-use socketioxide::SocketIo;
+use socketioxide::{SocketIo, TransportType};
 use anyhow::Result;
 use axum::routing::get;
 use axum::Router;
@@ -24,6 +24,7 @@ pub async fn run_socket_server() -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
         .connect_timeout(Duration::from_secs(30))
         .req_path("/socket.io")
+        .transports([TransportType::Websocket, TransportType::Polling])
         .build_layer();
 
     io.ns("/", |socket: SocketRef| {
