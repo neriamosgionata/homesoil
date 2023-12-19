@@ -11,6 +11,7 @@ use crate::schema::sensors;
 use crate::schema::sensor_reads::dsl::{sensor_id, sensor_value, id as sensor_read_id};
 use crate::schema::sensor_reads;
 use serde_json::from_str;
+use crate::schema::sensors::updated_at;
 
 use crate::sensor_types::{SENSOR_TYPE_CURRENT, SENSOR_TYPE_TEMPERATURE, SENSOR_TYPE_HUMIDITY, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_WIND_SPEED, SENSOR_TYPE_WIND_DIRECTION, SENSOR_TYPE_RAIN, SENSOR_TYPE_UV, SENSOR_TYPE_SOLAR_RADIATION, SENSOR_TYPE_UNKNOWN};
 
@@ -118,7 +119,7 @@ pub fn change_sensor_name(payload: String) -> Result<Sensor> {
     update_sensor_name.set_updated_at(chrono::Local::now().naive_local());
 
     update(sensors::table.find(update_sensor_name.get_id()))
-        .set(name.eq(update_sensor_name.get_name()))
+        .set((name.eq(update_sensor_name.get_name()), updated_at.eq(update_sensor_name.get_updated_at())))
         .execute(conn)
         .expect("Error updating sensor");
 
@@ -157,7 +158,7 @@ pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
     let conn = &mut connect()?;
 
     let sensors = sensors::table
-        .get_results::<Sensor>(conn)
+        .get_results(conn)
         .expect("Error loading sensors");
 
     Ok(sensors)
@@ -182,7 +183,7 @@ pub fn get_sensor_readings(other_sensor_id: i32) -> Result<Vec<SensorRead>> {
     let sensor_reads = sensor_reads::table
         .filter(sensor_id.eq(other_sensor_id))
         .order_by(sensor_read_id.desc())
-        .get_results::<SensorRead>(conn)
+        .get_results(conn)
         .expect("Error loading sensor reads");
 
     Ok(sensor_reads)

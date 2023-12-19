@@ -1,6 +1,13 @@
+use diesel::{ExpressionMethods, update};
 use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
+use crate::db::connect;
+use crate::models::{Actuator, UpdateActuatorState};
+use crate::schema::actuators;
+use crate::schema::actuators::{id, state, updated_at};
 use crate::sensor_methods::get_sensor_readings;
+use diesel::prelude::*;
+use crate::CoAPClient;
 
 //SENSORS
 pub const ALL_SENSORS_EVENT: &str = "all-sensors";
@@ -57,9 +64,102 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         |s: SocketRef, data: Data<i32>| {
             let actuator_id = data.0;
 
-            println!("Activate actuator: {:?}", actuator_id);
+            let conn = &mut connect().unwrap();
 
-            todo!();
+            println!("Changing actuator {:?} state", actuator_id);
+
+            let actuator = actuators::table
+                .filter(id.eq(actuator_id))
+                .get_result::<Actuator>(conn)
+                .expect("Error loading actuator");
+
+            let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
+
+            let response_actuator = match CoAPClient::get(&address) {
+                Ok(response) => response,
+                Err(_) => {
+                    println!("Error retrieving actuator state");
+                    return;
+                }
+            };
+
+            let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+
+            println!("Actuator current state: {:?}", payload);
+
+            let b = if payload == "ON" || payload == "ON-PULSE" {
+                b"OFF".to_vec()
+            } else {
+                b"ON".to_vec()
+            };
+
+            println!("Actuator address: {:?}", address);
+
+            let response_actuator = match CoAPClient::post(&address, b) {
+                Ok(response) => response,
+                Err(_) => {
+                    println!("Error changing actuator state");
+                    return;
+                }
+            };
+
+            let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+
+            println!("Actuator response: {:?}", payload);
+
+            if payload == "ON" || payload == "OFF" || payload == "ON-PULSE" {
+                let mut uas = UpdateActuatorState::new(actuator_id, if payload.contains("ON") { true } else { false });
+
+                uas.set_updated_at(chrono::Local::now().naive_local());
+
+                update(actuators::table.find(actuator_id))
+                    .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
+                    .execute(conn)
+                    .expect("Error updating actuator");
+
+                println!("Actuator new state: {:?}", uas.get_state());
+
+                match s.emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                        "actuator_id": actuator.get_id(),
+                        "actuator_state": uas.get_state(),
+                        "updated_at": actuator.get_updated_at()
+                    }),
+                ) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+
+                if payload == "ON-PULSE" {
+                    std::thread::sleep(std::time::Duration::from_millis(750));
+
+                    let mut uas = UpdateActuatorState::new(actuator_id, false);
+
+                    uas.set_updated_at(chrono::Local::now().naive_local());
+
+                    update(actuators::table.find(actuator_id))
+                        .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
+                        .execute(conn)
+                        .expect("Error updating actuator");
+
+                    println!("Actuator new state: {:?}", uas.get_state());
+
+                    match s.emit(
+                        ACTUATOR_STATE_CHANGE_EVENT,
+                        json!({
+                            "actuator_id": actuator.get_id(),
+                            "actuator_state": uas.get_state(),
+                            "updated_at": actuator.get_updated_at()
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    }
+                }
+            } else {
+                println!("Error changing actuator state");
+            }
         },
     );
 }

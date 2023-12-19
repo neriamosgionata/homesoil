@@ -1,9 +1,12 @@
+// @generated automatically by Diesel CLI.
+
 diesel::table! {
-    sensors {
+    actuators (id) {
         id -> Integer,
-        sensor_type -> VarChar,
-        ip_address -> VarChar,
-        name -> Nullable<VarChar>,
+        name -> Nullable<Text>,
+        ip_address -> Text,
+        port -> SmallInt,
+        state -> Bool,
         online -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
@@ -11,31 +14,32 @@ diesel::table! {
 }
 
 diesel::table! {
-    sensor_reads {
+    sensor_reads (id) {
         id -> Integer,
         sensor_id -> Integer,
-        sensor_value -> VarChar,
+        sensor_value -> Text,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
     }
 }
 
+diesel::table! {
+    sensors (id) {
+        id -> Integer,
+        name -> Nullable<Text>,
+        sensor_type -> Text,
+        ip_address -> Text,
+        port -> SmallInt,
+        online -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
+    }
+}
 
 diesel::joinable!(sensor_reads -> sensors (sensor_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    sensors,
+    actuators,
     sensor_reads,
+    sensors,
 );
-
-diesel::table! {
-    actuators {
-        id -> Integer,
-        ip_address -> VarChar,
-        name -> Nullable<VarChar>,
-        online -> Bool,
-        state -> Bool,
-        created_at -> Timestamp,
-        updated_at -> Nullable<Timestamp>,
-    }
-}

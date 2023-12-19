@@ -1,12 +1,11 @@
 CREATE TABLE IF NOT EXISTS `sensor_reads`
 (
-    id           int(11)      NOT NULL PRIMARY KEY AUTO_INCREMENT,
-    sensor_id    int(11)      NOT NULL REFERENCES sensors (id),
-    sensor_value varchar(255) NOT NULL,
-    created_at   timestamp    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at   timestamp    NULL     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8
-  AUTO_INCREMENT = 1;
+    id           INTEGER  NOT NULL PRIMARY KEY AUTOINCREMENT,
+    sensor_id    INTEGER  NOT NULL,
+    sensor_value TEXT     NOT NULL,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME NULL,
+    FOREIGN KEY (sensor_id) REFERENCES sensors (id)
+);
 
 CREATE INDEX sensor_reads_sensor_id_index ON sensor_reads (sensor_id);

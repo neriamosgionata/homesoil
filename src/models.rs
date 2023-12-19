@@ -1,18 +1,17 @@
 use diesel::{Identifiable, Insertable, Queryable, QueryableByName, Selectable};
 use serde::{Serialize, Deserialize};
 
-
 //SENSORS
 
-
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable)]
+#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName, Insertable)]
 #[diesel(table_name = crate::schema::sensors)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Sensor {
     id: i32,
+    name: Option<String>,
     sensor_type: String,
     ip_address: String,
-    name: Option<String>,
+    port: i16,
     online: bool,
     created_at: chrono::NaiveDateTime,
     updated_at: Option<chrono::NaiveDateTime>,
@@ -24,6 +23,7 @@ impl Sensor {
             id,
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
+            port: 5173,
             name: None,
             online: false,
             created_at: chrono::Local::now().naive_local(),
@@ -86,11 +86,19 @@ impl Sensor {
     pub fn set_id(&mut self, id: i32) {
         self.id = id;
     }
+
+    pub fn set_port(&mut self, port: i16) {
+        self.port = port;
+    }
+
+    pub fn get_port(&self) -> i16 {
+        self.port
+    }
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
 #[diesel(table_name = crate::schema::sensor_reads)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[diesel(belongs_to(Sensor))]
 pub struct SensorRead {
     id: i32,
@@ -140,14 +148,110 @@ impl SensorRead {
     }
 }
 
+//ACTUATORS
+
+#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
+#[diesel(table_name = crate::schema::actuators)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct Actuator {
+    id: i32,
+    name: Option<String>,
+    ip_address: String,
+    port: i16,
+    state: bool,
+    online: bool,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl Actuator {
+    pub fn new(id: i32, ip_address: &str) -> Self {
+        Self {
+            id,
+            ip_address: ip_address.to_string(),
+            port: 5173,
+            name: None,
+            online: false,
+            state: true,
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_ip_address(&self) -> &str {
+        &self.ip_address
+    }
+
+    pub fn get_name(&self) -> &Option<String> {
+        &self.name
+    }
+
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn get_online(&self) -> bool {
+        self.online
+    }
+
+    pub fn set_online(&mut self, online: bool) {
+        self.online = online;
+    }
+
+    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
+        self.created_at = created_at;
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
+    pub fn set_ip_address(&mut self, ip_address: String) {
+        self.ip_address = ip_address;
+    }
+
+    pub fn set_id(&mut self, id: i32) {
+        self.id = id;
+    }
+
+    pub fn set_state(&mut self, state: bool) {
+        self.state = state;
+    }
+
+    pub fn get_state(&self) -> bool {
+        self.state
+    }
+
+    pub fn set_port(&mut self, port: i16) {
+        self.port = port;
+    }
+
+    pub fn get_port(&self) -> i16 {
+        self.port
+    }
+}
+
 //HELPERS
 
 #[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
 #[diesel(table_name = crate::schema::sensors)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewSensor {
     sensor_type: String,
     ip_address: String,
+    port: i16,
     name: Option<String>,
     online: bool,
     created_at: Option<chrono::NaiveDateTime>,
@@ -158,6 +262,7 @@ impl NewSensor {
         Self {
             sensor_type: sensor_type.to_string(),
             ip_address: ip_address.to_string(),
+            port: 5173,
             name: None,
             online: false,
             created_at: None,
@@ -205,9 +310,9 @@ impl NewSensor {
     }
 }
 
-#[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::sensor_reads)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewSensorRead {
     sensor_id: i32,
     sensor_value: String,
@@ -288,99 +393,12 @@ impl SensorUnregister {
     }
 }
 
-
-//ACTUATORS
-
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable)]
+#[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::actuators)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
-pub struct Actuator {
-    id: i32,
-    ip_address: String,
-    name: Option<String>,
-    online: bool,
-    state: bool,
-    created_at: chrono::NaiveDateTime,
-    updated_at: Option<chrono::NaiveDateTime>,
-}
-
-impl Actuator {
-    pub fn new(id: i32, ip_address: &str) -> Self {
-        Self {
-            id,
-            ip_address: ip_address.to_string(),
-            name: None,
-            online: false,
-            state: true,
-            created_at: chrono::Local::now().naive_local(),
-            updated_at: None,
-        }
-    }
-
-    pub fn get_id(&self) -> i32 {
-        self.id
-    }
-
-    pub fn get_ip_address(&self) -> &str {
-        &self.ip_address
-    }
-
-    pub fn get_name(&self) -> &Option<String> {
-        &self.name
-    }
-
-    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
-        &self.created_at
-    }
-
-    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
-        &self.updated_at
-    }
-
-    pub fn get_online(&self) -> bool {
-        self.online
-    }
-
-    pub fn set_online(&mut self, online: bool) {
-        self.online = online;
-    }
-
-    pub fn set_created_at(&mut self, created_at: chrono::NaiveDateTime) {
-        self.created_at = created_at;
-    }
-
-    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
-        self.updated_at = Some(updated_at);
-    }
-
-    pub fn set_name(&mut self, name: Option<String>) {
-        self.name = name;
-    }
-
-    pub fn set_ip_address(&mut self, ip_address: String) {
-        self.ip_address = ip_address;
-    }
-
-    pub fn set_id(&mut self, id: i32) {
-        self.id = id;
-    }
-
-    pub fn set_state(&mut self, state: bool) {
-        self.state = state;
-    }
-
-    pub fn get_state(&self) -> bool {
-        self.state
-    }
-}
-
-//HELPERS
-
-#[derive(Insertable, Deserialize, Serialize, Debug, Clone)]
-#[diesel(table_name = crate::schema::actuators)]
-#[diesel(check_for_backend(diesel::mysql::Mysql))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewActuator {
     ip_address: String,
+    port: i16,
     name: Option<String>,
     online: bool,
     state: bool,
@@ -391,6 +409,7 @@ impl NewActuator {
     pub fn new(ip_address: &str) -> Self {
         Self {
             ip_address: ip_address.to_string(),
+            port: 5173,
             name: None,
             online: false,
             state: false,
@@ -436,6 +455,14 @@ impl NewActuator {
 
     pub fn get_state(&self) -> bool {
         self.state
+    }
+
+    pub fn set_port(&mut self, port: i16) {
+        self.port = port;
+    }
+
+    pub fn get_port(&self) -> i16 {
+        self.port
     }
 }
 

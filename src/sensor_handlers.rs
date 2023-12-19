@@ -30,6 +30,7 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                     "sensor_id": sensor.get_id(),
                                     "sensor_name": sensor.get_name(),
                                     "sensor_ip_address": sensor.get_ip_address(),
+                                    "sensor_port": sensor.get_port(),
                                     "sensor_type": sensor.get_sensor_type(),
                                     "online": sensor.get_online(),
                                     "created_at": sensor.get_created_at(),

@@ -1,14 +1,12 @@
 use std::env;
 use anyhow::{Error, Result};
 use diesel::Connection;
-use diesel::mysql::MysqlConnection;
+use diesel::sqlite::SqliteConnection;
 
-pub fn connect() -> Result<MysqlConnection, Error> {
+pub fn connect() -> Result<SqliteConnection, Error> {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    println!("Connecting to {}", database_url);
-
-    match MysqlConnection::establish(&database_url) {
+    match SqliteConnection::establish(&database_url) {
         Ok(conn) => Ok(conn),
         Err(e) => Err(Error::new(e))
     }

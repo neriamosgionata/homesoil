@@ -5,11 +5,11 @@ use diesel::prelude::*;
 use crate::db::connect;
 use crate::models::{NewActuator, UpdateActuatorName, SensorUnregister, Actuator, UpdateActuatorState};
 
-use crate::schema::actuators::dsl::{id, ip_address, name};
+use crate::schema::actuators::dsl::{id, ip_address, name, port};
 use crate::schema::actuators;
 
 use serde_json::from_str;
-use crate::schema::actuators::state;
+use crate::schema::actuators::{state, updated_at};
 
 pub fn register_actuator(payload: String) -> Result<Actuator> {
     println!("Registering actuator: {}", payload);
@@ -22,6 +22,7 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
 
     match actuators::table
         .filter(ip_address.like(&new_actuator.get_ip_address()))
+        .filter(port.eq(&new_actuator.get_port()))
         .get_result(conn)
     {
         Ok(sensor) => {
@@ -76,7 +77,7 @@ pub fn change_actuator_name(payload: String) -> Result<Actuator> {
     update_sensor_name.set_updated_at(chrono::Local::now().naive_local());
 
     update(actuators::table.find(update_sensor_name.get_id()))
-        .set(name.eq(update_sensor_name.get_name()))
+        .set((name.eq(update_sensor_name.get_name()), updated_at.eq(update_sensor_name.get_updated_at())))
         .execute(conn)
         .expect("Error updating actuator");
 
@@ -98,7 +99,7 @@ pub fn change_actuator_state(payload: String) -> Result<Actuator> {
     update_actuator_state.set_updated_at(chrono::Local::now().naive_local());
 
     update(actuators::table.find(update_actuator_state.get_id()))
-        .set(state.eq(update_actuator_state.get_state()))
+        .set((state.eq(update_actuator_state.get_state()), updated_at.eq(update_actuator_state.get_updated_at())))
         .execute(conn)
         .expect("Error updating actuator");
 
@@ -114,7 +115,7 @@ pub fn get_all_registered_actuators() -> Result<Vec<Actuator>> {
     let conn = &mut connect()?;
 
     let sensors = actuators::table
-        .get_results::<Actuator>(conn)
+        .get_results(conn)
         .expect("Error loading actuators");
 
     Ok(sensors)

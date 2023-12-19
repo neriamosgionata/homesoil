@@ -30,6 +30,7 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                                     "actuator_id": actuator.get_id(),
                                     "actuator_name": actuator.get_name(),
                                     "actuator_ip_address": actuator.get_ip_address(),
+                                    "actuator_port": actuator.get_port(),
                                     "online": actuator.get_online(),
                                     "created_at": actuator.get_created_at(),
                              }),
@@ -45,7 +46,10 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                     None => {}
                 }
 
-                actuator.get_id().to_string()
+                json!({
+                    "id": actuator.get_id(),
+                    "state": actuator.get_state(),
+                }).to_string()
             }
             Err(e) => {
                 println!("Error registering actuator: {:?}", e);

@@ -1,14 +1,13 @@
 CREATE TABLE IF NOT EXISTS `sensors`
 (
-    id          int(11)      NOT NULL PRIMARY KEY AUTO_INCREMENT,
-    name        varchar(255) NULL     DEFAULT 'Default',
-    sensor_type varchar(255) NOT NULL,
-    ip_address  varchar(255) NOT NULL,
-    online      tinyint(1)   NOT NULL DEFAULT 0,
-    created_at  timestamp    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  timestamp    NULL     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8
-  AUTO_INCREMENT = 1;
+    id          INTEGER  NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name        TEXT     NULL     DEFAULT 'Default',
+    sensor_type TEXT     NOT NULL,
+    ip_address  TEXT     NOT NULL,
+    port        SMALLINT NOT NULL,
+    online      TINYINT  NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NULL
+);
 
 CREATE INDEX `sensors_sensor_type_index` ON `sensors` (`sensor_type` ASC);
