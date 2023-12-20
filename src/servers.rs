@@ -1,4 +1,3 @@
-use std::env;
 use std::net::SocketAddr;
 use std::thread::{JoinHandle, spawn};
 use std::time::Duration;
@@ -20,9 +19,7 @@ use crate::events::{ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SEN
 use crate::sensor_handlers::ping_sensor;
 
 
-pub async fn run_socket_server() -> Result<SocketIo> {
-    let address = env::var("SOCKET_IO_SERVER_ADDRESS").expect("SOCKET_IO_SERVER_ADDRESS must be set");
-
+pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
         .connect_timeout(Duration::from_secs(30))
         .req_path("/socket.io")
@@ -84,18 +81,20 @@ pub async fn run_socket_server() -> Result<SocketIo> {
         }
     });
 
+    let boxed_address = Box::new(address.clone());
+
     spawn(move || {
         Runtime::new()
             .expect("Failed to create Tokio runtime")
-            .block_on(async move {
+            .block_on(async {
+                println!("Starting SocketIO server on {}", boxed_address.as_str());
+
                 let app = Router::new()
                     .route("/", get(|| async { "OK" }))
                     .layer(layer)
                     .layer(CorsLayer);
 
-                println!("SocketIO server listening on {}", address);
-
-                AxumServer::bind(&address.clone().parse::<SocketAddr>().expect("Failed to parse SocketIO server address"))
+                AxumServer::bind(&boxed_address.as_str().parse::<SocketAddr>().expect("Failed to parse SocketIO server address"))
                     .serve(app.into_make_service())
                     .await
                     .unwrap();
@@ -139,18 +138,17 @@ pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
     })
 }
 
-pub async fn run_coap_server(socket: &SocketIo) {
+pub async fn run_coap_server(address: &String, socket: &SocketIo) {
     let boxed_socket = Box::new(socket.clone());
+    let boxed_address = Box::new(address.clone());
 
     spawn(move || {
-        println!("Starting CoAP server");
+        println!("Starting CoAP server on {}", boxed_address.as_str());
 
         Runtime::new()
             .expect("Failed to create Tokio runtime")
             .block_on(async {
-                let address = env::var("COAP_SERVER_ADDRESS").expect("COAP_SERVER_ADDRESS must be set");
-
-                let mut server = Server::new(address.clone()).unwrap();
+                let mut server = Server::new(boxed_address.as_str()).unwrap();
 
                 server.run(
                     |request| async {
