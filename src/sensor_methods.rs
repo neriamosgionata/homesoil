@@ -16,8 +16,6 @@ use crate::schema::sensors::updated_at;
 use crate::sensor_types::{SENSOR_TYPE_CURRENT, SENSOR_TYPE_TEMPERATURE, SENSOR_TYPE_HUMIDITY, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_WIND_SPEED, SENSOR_TYPE_WIND_DIRECTION, SENSOR_TYPE_RAIN, SENSOR_TYPE_UV, SENSOR_TYPE_SOLAR_RADIATION, SENSOR_TYPE_UNKNOWN};
 
 pub fn register_sensor(payload: String) -> Result<Sensor> {
-    println!("Registering sensor: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut new_sensor = from_str::<NewSensor>(&payload)?;
@@ -30,7 +28,6 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
         .get_result(conn)
     {
         Ok(sensor) => {
-            println!("Sensor already registered: {:?}", sensor);
             return Ok(sensor);
         }
         Err(_) => {}
@@ -85,8 +82,6 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
 }
 
 pub fn unregister_sensor(payload: String) -> Result<Sensor> {
-    println!("Registering sensor: {}", payload);
-
     let conn = &mut connect()?;
 
     let new_sensor = from_str::<SensorUnregister>(&payload)?;
@@ -110,8 +105,6 @@ pub fn unregister_sensor(payload: String) -> Result<Sensor> {
 }
 
 pub fn change_sensor_name(payload: String) -> Result<Sensor> {
-    println!("Changing sensor name: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut update_sensor_name = from_str::<UpdateSensorName>(&payload)?;
@@ -132,8 +125,6 @@ pub fn change_sensor_name(payload: String) -> Result<Sensor> {
 }
 
 pub fn read_sensor(payload: String) -> Result<SensorRead> {
-    println!("Reading sensor: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut new_sensor_read = from_str::<NewSensorRead>(&payload)?;

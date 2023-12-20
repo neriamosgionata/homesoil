@@ -5,8 +5,9 @@ use crate::db::connect;
 use crate::models::{Actuator, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
-use crate::sensor_methods::get_sensor_readings;
+use crate::sensor_methods::{change_sensor_name, get_sensor_readings};
 use diesel::prelude::*;
+use crate::actuator_methods::change_actuator_name;
 use crate::CoAPClient;
 
 //SENSORS
@@ -21,6 +22,8 @@ pub const SENSOR_READ_EVENT: &str = "sensor-read";
 pub const SENSOR_NAME_CHANGE_EVENT: &str = "sensor-name-change";
 
 pub const SENSOR_CHANGE_ONLINE_EVENT: &str = "sensor-change-online";
+
+pub const RENAME_SENSOR_EVENT: &str = "rename-sensor";
 
 
 //ACTUATORS
@@ -38,14 +41,14 @@ pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
 
 pub const ACTUATOR_CHANGE_ONLINE_EVENT: &str = "actuator-change-online";
 
+pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
+
 
 pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
         GET_SENSOR_READINGS_EVENT,
         |s: SocketRef, data: Data<i32>| {
             let sensor_id = data.0;
-
-            println!("Get sensor readings: {:?}", sensor_id);
 
             match get_sensor_readings(sensor_id) {
                 Ok(sensor_reads) => {
@@ -71,16 +74,12 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let conn = &mut connect().unwrap();
 
-            println!("Pulsing actuator {:?}", actuator_id);
-
             let actuator = actuators::table
                 .filter(id.eq(actuator_id))
                 .get_result::<Actuator>(conn)
                 .expect("Error loading actuator");
 
             let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
-
-            println!("Actuator address: {:?}", address);
 
             let response_actuator = match CoAPClient::post(&address, b"ON-PULSE".to_vec()) {
                 Ok(response) => response,
@@ -92,8 +91,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
 
-            println!("Actuator response: {:?}", payload);
-
             if payload == "ON-PULSE" {
                 let mut uas = UpdateActuatorState::new(actuator_id, true);
 
@@ -103,8 +100,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
                     .execute(conn)
                     .expect("Error updating actuator");
-
-                println!("Actuator new state: {:?}", uas.get_state());
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,
@@ -118,8 +113,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     Err(_) => {}
                 }
 
-                println!("Waiting 2 seconds");
-
                 std::thread::sleep(std::time::Duration::from_millis(2000));
 
                 uas.set_state(false);
@@ -129,8 +122,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
                     .execute(conn)
                     .expect("Error updating actuator");
-
-                println!("Actuator new state: {:?}", uas.get_state());
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,
@@ -156,8 +147,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let conn = &mut connect().unwrap();
 
-            println!("Changing actuator {:?} state", actuator_id);
-
             let actuator = actuators::table
                 .filter(id.eq(actuator_id))
                 .get_result::<Actuator>(conn)
@@ -175,15 +164,11 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
 
-            println!("Actuator current state: {:?}", payload);
-
             let b = if payload == "ON" || payload == "ON-PULSE" {
                 b"OFF".to_vec()
             } else {
                 b"ON".to_vec()
             };
-
-            println!("Actuator address: {:?}", address);
 
             let response_actuator = match CoAPClient::post(&address, b) {
                 Ok(response) => response,
@@ -195,8 +180,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
 
-            println!("Actuator response: {:?}", payload);
-
             if payload == "ON" || payload == "OFF" || payload == "ON-PULSE" {
                 let mut uas = UpdateActuatorState::new(actuator_id, if payload.contains("ON") { true } else { false });
 
@@ -206,8 +189,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
                     .execute(conn)
                     .expect("Error updating actuator");
-
-                println!("Actuator new state: {:?}", uas.get_state());
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,
@@ -222,6 +203,61 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 }
             } else {
                 println!("Error changing actuator state");
+            }
+        },
+    );
+
+    socket.on(
+        RENAME_SENSOR_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            println!("RENAME_SENSOR_EVENT {}", data.0);
+            let payload = data.0;
+
+            let sensor = change_sensor_name(payload);
+
+            match sensor {
+                Ok(sensor) => {
+                    match s.emit(
+                        SENSOR_NAME_CHANGE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "sensor_name": sensor.get_name(),
+                                "updated_at": sensor.get_updated_at(),
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    }
+                }
+                Err(_) => {}
+            }
+        },
+    );
+
+    socket.on(
+        RENAME_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            println!("RENAME_ACTUATOR_EVENT {}", data.0);
+
+            let payload = data.0;
+
+            let actuator = change_actuator_name(payload);
+
+            match actuator {
+                Ok(actuator) => {
+                    match s.emit(
+                        ACTUATOR_NAME_CHANGE_EVENT,
+                        json!({
+                                "actuator_id": actuator.get_id(),
+                                "actuator_name": actuator.get_name(),
+                                "updated_at": actuator.get_updated_at(),
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    }
+                }
+                Err(_) => {}
             }
         },
     );

@@ -19,16 +19,11 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         if request.get_method() != &RequestType::Post {
-            println!("Not a POST request");
             return "KO".to_string();
         }
 
-        println!("POST request");
-
         match register_actuator(payload) {
             Ok(actuator) => {
-                println!("Registered actuator: {:?}", actuator);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -44,7 +39,6 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                              }),
                         ) {
                             Ok(_) => {
-                                println!("actuator register event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting actuator register event: {:?}", e);
@@ -73,16 +67,11 @@ pub fn actuator_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRe
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         if request.get_method() != &RequestType::Post {
-            println!("Not a POST request");
             return "KO".to_string();
         }
 
-        println!("POST request");
-
         match unregister_actuator(payload) {
             Ok(actuator) => {
-                println!("actuator unregistered: {:?}", actuator);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -92,7 +81,6 @@ pub fn actuator_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRe
                              }),
                         ) {
                             Ok(_) => {
-                                println!("actuator unregister event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting actuator unregister event: {:?}", e);
@@ -116,18 +104,13 @@ pub fn actuator_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRe
 pub fn actuator_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         if request.get_method() != &RequestType::Put {
-            println!("Not a PUT request");
             return "KO".to_string();
         }
-
-        println!("PUT request");
 
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         match change_actuator_name(payload) {
             Ok(actuator) => {
-                println!("actuator name changed: {:?}", actuator);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -139,7 +122,6 @@ pub fn actuator_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                 }),
                         ) {
                             Ok(_) => {
-                                println!("actuator name changed event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting actuator name changed event: {:?}", e);
@@ -164,18 +146,13 @@ pub fn actuator_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
 pub fn actuator_update_state_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         if request.get_method() != &RequestType::Put {
-            println!("Not a PUT request");
             return "KO".to_string();
         }
-
-        println!("PUT request");
 
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         match change_actuator_state(payload) {
             Ok(actuator) => {
-                println!("actuator state changed: {:?}", actuator);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -187,7 +164,6 @@ pub fn actuator_update_state_handler<'a>(socket: &'a SocketIo, request: &'a Coap
                                 }),
                         ) {
                             Ok(_) => {
-                                println!("actuator state changed event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting actuator state changed event: {:?}", e);

@@ -12,8 +12,6 @@ use serde_json::from_str;
 use crate::schema::actuators::{state, updated_at};
 
 pub fn register_actuator(payload: String) -> Result<Actuator> {
-    println!("Registering actuator: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut new_actuator = from_str::<NewActuator>(&payload)?;
@@ -27,7 +25,6 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
         .get_result(conn)
     {
         Ok(sensor) => {
-            println!("actuator already registered: {:?}", sensor);
             return Ok(sensor);
         }
         Err(_) => {}
@@ -49,8 +46,6 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
 }
 
 pub fn unregister_actuator(payload: String) -> Result<Actuator> {
-    println!("Registering actuator: {}", payload);
-
     let conn = &mut connect()?;
 
     let new_actuator = from_str::<SensorUnregister>(&payload)?;
@@ -69,8 +64,6 @@ pub fn unregister_actuator(payload: String) -> Result<Actuator> {
 }
 
 pub fn change_actuator_name(payload: String) -> Result<Actuator> {
-    println!("Changing actuator name: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut update_sensor_name = from_str::<UpdateActuatorName>(&payload)?;
@@ -91,8 +84,6 @@ pub fn change_actuator_name(payload: String) -> Result<Actuator> {
 }
 
 pub fn change_actuator_state(payload: String) -> Result<Actuator> {
-    println!("Changing actuator state: {}", payload);
-
     let conn = &mut connect()?;
 
     let mut update_actuator_state = from_str::<UpdateActuatorState>(&payload)?;

@@ -14,8 +14,6 @@ pub async fn path_handler(
 
     let path = format!("{}{}", "/", request.get_path());
 
-    println!("Path called: {}", path);
-
     match handlers.get_mut(&*path) {
         Some(future) => {
             let res = future.await;

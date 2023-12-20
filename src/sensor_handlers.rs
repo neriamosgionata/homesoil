@@ -19,16 +19,11 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         if request.get_method() != &RequestType::Post {
-            println!("Not a POST request");
             return "KO".to_string();
         }
 
-        println!("POST request");
-
         match register_sensor(payload) {
             Ok(sensor) => {
-                println!("Registered sensor: {:?}", sensor);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -44,7 +39,6 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                              }),
                         ) {
                             Ok(_) => {
-                                println!("Sensor register event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting sensor register event: {:?}", e);
@@ -70,16 +64,11 @@ pub fn sensor_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         if request.get_method() != &RequestType::Post {
-            println!("Not a POST request");
             return "KO".to_string();
         }
 
-        println!("POST request");
-
         match unregister_sensor(payload) {
             Ok(sensor) => {
-                println!("Sensor unregistered: {:?}", sensor);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -89,7 +78,6 @@ pub fn sensor_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                              }),
                         ) {
                             Ok(_) => {
-                                println!("Sensor unregister event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting sensor unregister event: {:?}", e);
@@ -115,16 +103,11 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         if request.get_method() != &RequestType::Post {
-            println!("Not a POST request");
             return "KO".to_string();
         }
 
-        println!("POST request");
-
         match read_sensor(payload) {
             Ok(sensor_read) => {
-                println!("Sensor read received: {:?}", sensor_read);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -138,7 +121,6 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
                         )
                         {
                             Ok(_) => {
-                                println!("Sensor read event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting sensor read event: {:?}", e);
@@ -163,18 +145,13 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
 pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
         if request.get_method() != &RequestType::Put {
-            println!("Not a PUT request");
             return "KO".to_string();
         }
-
-        println!("PUT request");
 
         let payload = String::from_utf8(request.message.payload.clone()).unwrap();
 
         match change_sensor_name(payload) {
             Ok(sensor) => {
-                println!("Sensor name changed: {:?}", sensor);
-
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
@@ -186,7 +163,6 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
                                 }),
                         ) {
                             Ok(_) => {
-                                println!("Sensor name changed event emitted");
                             }
                             Err(e) => {
                                 println!("Error emitting sensor name changed event: {:?}", e);

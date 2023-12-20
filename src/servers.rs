@@ -32,8 +32,6 @@ pub async fn run_socket_server() -> Result<SocketIo> {
     io.ns("/", |socket: SocketRef| {
         println!("Socket connected : {:?}", socket.id);
 
-        println!("Registering callbacks");
-
         register_all_callbacks(&socket);
 
         socket.on_disconnect(|socket: SocketRef| {
