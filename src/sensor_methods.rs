@@ -11,6 +11,7 @@ use crate::schema::sensors;
 use crate::schema::sensor_reads::dsl::{sensor_id, sensor_value, id as sensor_read_id};
 use crate::schema::sensor_reads;
 use serde_json::from_str;
+use crate::schema::sensor_reads::created_at;
 use crate::schema::sensors::updated_at;
 
 use crate::sensor_types::{SENSOR_TYPE_CURRENT, SENSOR_TYPE_TEMPERATURE, SENSOR_TYPE_HUMIDITY, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_WIND_SPEED, SENSOR_TYPE_WIND_DIRECTION, SENSOR_TYPE_RAIN, SENSOR_TYPE_UV, SENSOR_TYPE_SOLAR_RADIATION, SENSOR_TYPE_UNKNOWN};
@@ -168,12 +169,15 @@ pub fn get_all_last_sensor_readings() -> Result<Vec<SensorRead>> {
     Ok(sensor_reads)
 }
 
-pub fn get_sensor_readings(other_sensor_id: i32) -> Result<Vec<SensorRead>> {
+pub fn get_sensor_readings(other_sensor_id: i32, from_date: &String, to_date: &String) -> Result<Vec<SensorRead>> {
     let conn = &mut connect()?;
 
     let sensor_reads = sensor_reads::table
         .filter(sensor_id.eq(other_sensor_id))
+        .filter(created_at.ge(chrono::NaiveDateTime::parse_from_str(from_date, "%Y-%m-%d %H:%M:%S").unwrap()))
+        .filter(created_at.le(chrono::NaiveDateTime::parse_from_str(to_date, "%Y-%m-%d %H:%M:%S").unwrap()))
         .order_by(sensor_read_id.desc())
+        .limit(50)
         .get_results(conn)
         .expect("Error loading sensor reads");
 

@@ -38,8 +38,7 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                     "created_at": sensor.get_created_at(),
                              }),
                         ) {
-                            Ok(_) => {
-                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting sensor register event: {:?}", e);
                             }
@@ -77,8 +76,7 @@ pub fn sensor_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                                     "sensor_id": sensor.get_id(),
                              }),
                         ) {
-                            Ok(_) => {
-                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting sensor unregister event: {:?}", e);
                             }
@@ -120,8 +118,7 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
                                 }),
                         )
                         {
-                            Ok(_) => {
-                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting sensor read event: {:?}", e);
                             }
@@ -162,8 +159,7 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
                                     "updated_at": sensor.get_updated_at(),
                                 }),
                         ) {
-                            Ok(_) => {
-                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting sensor name changed event: {:?}", e);
                             }
@@ -189,7 +185,12 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
 
     match CoAPClient::get(&address) {
         Ok(_) => {
-            let conn = &mut connect().unwrap();
+            let conn = &mut match connect() {
+                Ok(conn) => conn,
+                Err(_) => {
+                    return;
+                }
+            };
 
             let uat = chrono::Local::now().naive_local();
 

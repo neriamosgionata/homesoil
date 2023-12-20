@@ -191,7 +191,12 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
     match CoAPClient::get(&address) {
         Ok(_) => {
             if !actuator.get_online() {
-                let conn = &mut connect().unwrap();
+                let conn = &mut match connect() {
+                    Ok(conn) => conn,
+                    Err(_) => {
+                        return;
+                    }
+                };
 
                 let uat = chrono::Local::now().naive_local();
 

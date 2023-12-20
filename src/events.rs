@@ -2,7 +2,7 @@ use diesel::{ExpressionMethods, update};
 use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
 use crate::db::connect;
-use crate::models::{Actuator, UpdateActuatorState};
+use crate::models::{Actuator, GetSensorReadings, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
 use crate::sensor_methods::{change_sensor_name, get_sensor_readings};
@@ -47,10 +47,12 @@ pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
 pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
         GET_SENSOR_READINGS_EVENT,
-        |s: SocketRef, data: Data<i32>| {
-            let sensor_id = data.0;
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
 
-            match get_sensor_readings(sensor_id) {
+            let gsr = serde_json::from_str::<GetSensorReadings>(&payload).unwrap();
+
+            match get_sensor_readings(gsr.get_id(), gsr.get_from_date(), gsr.get_to_date()) {
                 Ok(sensor_reads) => {
                     match s.emit(
                         ALL_SENSOR_READINGS_EVENT,

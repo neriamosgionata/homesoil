@@ -403,6 +403,37 @@ impl SensorUnregister {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct GetSensorReadings {
+    id: i32,
+    from_date: String,
+    to_date: String,
+}
+
+impl GetSensorReadings {
+
+    pub fn new(id: i32, from_date: String, to_date: String) -> Self {
+        Self {
+            id,
+            from_date,
+            to_date,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_from_date(&self) -> &String {
+        &self.from_date
+    }
+
+    pub fn get_to_date(&self) -> &String {
+        &self.to_date
+    }
+
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::actuators)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
