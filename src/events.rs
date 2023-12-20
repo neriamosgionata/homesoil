@@ -210,7 +210,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
         RENAME_SENSOR_EVENT,
         |s: SocketRef, data: Data<String>| {
-            println!("RENAME_SENSOR_EVENT {}", data.0);
             let payload = data.0;
 
             let sensor = change_sensor_name(payload);
@@ -237,8 +236,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
         RENAME_ACTUATOR_EVENT,
         |s: SocketRef, data: Data<String>| {
-            println!("RENAME_ACTUATOR_EVENT {}", data.0);
-
             let payload = data.0;
 
             let actuator = change_actuator_name(payload);
