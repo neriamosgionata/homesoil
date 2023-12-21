@@ -29,3 +29,5 @@ pub mod events;
 pub mod sensor_types;
 pub mod actuator_handlers;
 pub mod actuator_methods;
+pub mod script_parser;
+pub mod script_runner;
