@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use regex::Regex;
 use anyhow::{Error, Result};
+use crate::condition_parser::parse_condition;
 
 type Command = &'static str;
 
@@ -28,7 +29,6 @@ const INSTRUCTION_BLOCK_END: Instruction = "END";
 const INSTRUCTION_IF: Instruction = "IF";
 const INSTRUCTION_LOOP: Instruction = "LOOP";
 const INSTRUCTION_WHILE_LOOP: Instruction = "WHILE";
-const INSTRUCTION_FOR_LOOP: Instruction = "FOR";
 const INSTRUCTION_DELAY: Instruction = "DELAY";
 
 const MAIN_BLOCK_START: Instruction = "RUN";
@@ -84,63 +84,90 @@ fn args_required(args: &Option<Args>) {
     }
 }
 
+fn run_inner_executions(inner_executions: &Vec<ScriptExecution>, variables: &Variables) -> CommandFunctionResult {
+    for execution in inner_executions {
+        match execution {
+            ScriptExecution::Command(command) => {
+                let execution = command.execute(variables);
+                if execution.is_break() {
+                    break;
+                }
+
+                if execution.is_return() || execution.is_error() {
+                    return execution;
+                }
+            }
+            ScriptExecution::Block(block) => {
+                let execution = block.execute(variables);
+                if execution.is_break() {
+                    break;
+                }
+
+                if execution.is_return() || execution.is_error() {
+                    return execution;
+                }
+            }
+        }
+    }
+
+    CommandFunctionResult::Continue
+}
+
 fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
     match instruction {
         INSTRUCTION_IF => Box::new(|args, inner_executions, variables| {
             args_required(args);
 
-            todo!();
+            let args = args.clone().unwrap();
 
-            CommandFunctionResult::Continue
+            let condition = parse_condition(args, variables);
+
+            if condition.evaluate() {
+                return run_inner_executions(inner_executions, variables);
+            }
+
+            CommandFunctionResult::Error("Condition not met".to_string())
         }),
         INSTRUCTION_LOOP => Box::new(|_args, inner_executions, variables| {
             loop {
-                for execution in inner_executions {
-                    match execution {
-                        ScriptExecution::Command(command) => {
-                            let execution = command.execute(variables);
-                            if execution.is_break() {
-                                break;
-                            }
+                let res = run_inner_executions(inner_executions, variables);
 
-                            if execution.is_return() {
-                                return execution;
-                            }
-                        }
-                        ScriptExecution::Block(block) => {
-                            let execution = block.execute(variables);
-                            if execution.is_break() {
-                                break;
-                            }
+                if res.is_break() {
+                    break;
+                }
 
-                            if execution.is_return() {
-                                return execution;
-                            }
-                        }
-                    }
+                if res.is_return() || res.is_error() {
+                    return res;
                 }
             }
+
+            CommandFunctionResult::Continue
         }),
         INSTRUCTION_WHILE_LOOP => Box::new(|args, inner_executions, variables| {
             args_required(args);
 
-            let conditions = args.as_ref().unwrap();
+            while parse_condition(args.clone().unwrap(), variables).evaluate() {
+                let res = run_inner_executions(inner_executions, variables);
 
-            todo!();
+                if res.is_break() {
+                    break;
+                }
 
-            CommandFunctionResult::Continue
-        }),
-        INSTRUCTION_FOR_LOOP => Box::new(|args, inner_executions, variables| {
-            args_required(args);
-
-            todo!();
+                if res.is_return() || res.is_error() {
+                    return res;
+                }
+            }
 
             CommandFunctionResult::Continue
         }),
         INSTRUCTION_DELAY => Box::new(|args, inner_executions, variables| {
             args_required(args);
 
-            todo!();
+            let args = args.clone().unwrap();
+
+            let delay = args[0].to_string(variables).parse::<u64>().unwrap();
+
+            std::thread::sleep(std::time::Duration::from_millis(delay));
 
             CommandFunctionResult::Continue
         }),
@@ -150,9 +177,8 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
     }
 }
 
-
-fn parse_argument(s: &str) -> Value {
-    match s {
+fn parse_argument(s: String) -> Value {
+    match s.as_str() {
         "true" => Value::Boolean(true),
         "false" => Value::Boolean(false),
         _ => {
@@ -160,6 +186,13 @@ fn parse_argument(s: &str) -> Value {
                 Value::String(s[1..s.len() - 1].to_string())
             } else if s.starts_with("$") {
                 Value::Variable(s[1..s.len()].to_string())
+            } else if (s.starts_with("[") && s.ends_with("]")) || (s.starts_with("{") && s.ends_with("}")) {
+                Value::Array(
+                    s[1..s.len() - 1]
+                        .split(",")
+                        .map(|arg| parse_argument(arg.to_string()))
+                        .collect::<Vec<Value>>()
+                )
             } else {
                 Value::Number(s.parse::<i32>().unwrap())
             }
@@ -167,63 +200,99 @@ fn parse_argument(s: &str) -> Value {
     }
 }
 
-fn parse_instruction(s: &str) -> (Instruction, Option<Args>) {
+fn parse_instruction(s: String) -> (Instruction, Option<Args>) {
     let mut fragments = s.split_whitespace();
-    let instruction = fragments.next().unwrap();
-    let arguments = fragments.map(|arg| parse_argument(arg)).collect::<Vec<Value>>();
+
+    let instruction = fragments.next();
+    let arguments = fragments.map(|arg| parse_argument(arg.to_string())).collect::<Vec<Value>>();
 
     (
-        match instruction {
+        match instruction.unwrap() {
             INSTRUCTION_IF => INSTRUCTION_IF,
             INSTRUCTION_LOOP => INSTRUCTION_LOOP,
             INSTRUCTION_WHILE_LOOP => INSTRUCTION_WHILE_LOOP,
-            INSTRUCTION_FOR_LOOP => INSTRUCTION_FOR_LOOP,
             INSTRUCTION_DELAY => INSTRUCTION_DELAY,
             _ => {
-                panic!("Unknown instruction: {}", instruction);
+                panic!("Unknown instruction: {}", instruction.unwrap());
             }
         },
         if arguments.len() > 0 { Some(arguments) } else { None }
     )
 }
 
+fn parse_command(s: String) -> (Command, Option<Args>) {
+    let mut fragments = s.split_whitespace();
 
-fn parse_command(s: &str) -> Command {
-    match s {
-        COMMAND_ACTIVATE_ACTUATOR => COMMAND_ACTIVATE_ACTUATOR,
-        COMMAND_DEACTIVATE_ACTUATOR => COMMAND_DEACTIVATE_ACTUATOR,
-        COMMAND_PULSE_ACTUATOR => COMMAND_PULSE_ACTUATOR,
-        COMMAND_READ_SENSOR => COMMAND_READ_SENSOR,
-        COMMAND_SET_VARIABLE => COMMAND_SET_VARIABLE,
-        COMMAND_UNSET_VARIABLE => COMMAND_UNSET_VARIABLE,
-        _ => {
-            panic!("Unknown command: {}", s);
-        }
-    }
+    let command = fragments.next();
+    let arguments = fragments.map(|arg| parse_argument(arg.to_string())).collect::<Vec<Value>>();
+
+    (
+        match command.unwrap() {
+            COMMAND_ACTIVATE_ACTUATOR => COMMAND_ACTIVATE_ACTUATOR,
+            COMMAND_DEACTIVATE_ACTUATOR => COMMAND_DEACTIVATE_ACTUATOR,
+            COMMAND_PULSE_ACTUATOR => COMMAND_PULSE_ACTUATOR,
+            COMMAND_READ_SENSOR => COMMAND_READ_SENSOR,
+            COMMAND_SET_VARIABLE => COMMAND_SET_VARIABLE,
+            COMMAND_UNSET_VARIABLE => COMMAND_UNSET_VARIABLE,
+            _ => {
+                panic!("Unknown command: {}", s);
+            }
+        },
+        if arguments.len() > 0 { Some(arguments) } else { None }
+    )
 }
 
-#[derive(Clone, Debug)]
-enum Value {
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum Value {
+    Array(Vec<Value>),
     String(String),
     Variable(String),
     Number(i32),
     Boolean(bool),
 }
 
-type Args = Vec<Value>;
+impl Value {
+    pub fn to_string(&self, variables: &Variables) -> String {
+        match self {
+            Value::String(s) => s.to_string(),
+            Value::Variable(s) => variables.get(s).expect(format!("Variable {} not found", s).as_str()).to_string(variables),
+            Value::Number(n) => n.to_string(),
+            Value::Boolean(b) => b.to_string(),
+            Value::Array(array) => {
+                let mut s = "[".to_string();
+                for value in array {
+                    s.push_str(value.to_string(variables).as_str());
+                    s.push_str(", ");
+                }
+                s.push_str("]");
+                s
+            }
+        }
+    }
+}
 
-type Variables = HashMap<String, Value>;
+pub type Args = Vec<Value>;
+
+pub type Variables = HashMap<String, Value>;
 
 type CommandFunction = Box<dyn Fn(&Option<Args>, &Variables) -> CommandFunctionResult>;
 type InstructionFunction = Box<dyn Fn(&Option<Args>, &Vec<ScriptExecution>, &Variables) -> CommandFunctionResult>;
 
 enum CommandFunctionResult {
+    Error(String),
     Return(Value),
     Continue,
     Break,
 }
 
 impl CommandFunctionResult {
+    fn is_error(&self) -> bool {
+        match self {
+            CommandFunctionResult::Error(_) => true,
+            _ => false,
+        }
+    }
+
     fn is_return(&self) -> bool {
         match self {
             CommandFunctionResult::Return(_) => true,
@@ -254,20 +323,14 @@ struct ScriptCommand {
 
 impl ScriptCommand {
     fn new(fragment: String) -> ScriptCommand {
-        let command_fragments = fragment.split_whitespace().collect::<Vec<&str>>();
-
-        let command = parse_command(command_fragments[0]);
-
-        let arguments = if command_fragments.len() > 1 {
-            let args = command_fragments[1..].iter().map(|arg| parse_argument(arg)).collect::<Vec<Value>>();
-            Some(args)
-        } else {
-            None
-        };
+        let (
+            command,
+            arguments,
+        ) = parse_command(fragment);
 
         ScriptCommand {
             command,
-            arguments,
+            arguments: if arguments.clone().unwrap().len() > 0 { Some(arguments.clone().unwrap()) } else { None },
             function: parse_command_function(command),
         }
     }
@@ -285,7 +348,7 @@ impl ScriptCommand {
     }
 
     fn execute(&self, variables: &Variables) -> CommandFunctionResult {
-        (self.get_function())(self.get_arguments(), variables)
+        self.get_function()(self.get_arguments(), variables)
     }
 }
 
@@ -304,7 +367,7 @@ impl ScriptBlock {
         let (
             instruction,
             arguments,
-        ) = parse_instruction(instruction_fragment.as_str());
+        ) = parse_instruction(instruction_fragment);
 
         ScriptBlock {
             instruction,
@@ -331,7 +394,7 @@ impl ScriptBlock {
     }
 
     fn execute(&self, variables: &Variables) -> CommandFunctionResult {
-        (self.get_function())(self.get_arguments(), self.get_inner_executions(), variables)
+        self.get_function()(self.get_arguments(), self.get_inner_executions(), variables)
     }
 }
 
@@ -346,18 +409,14 @@ fn remove_tabs_and_multiple_whitespace(s: String) -> String {
 }
 
 fn parse_commands(fragment: String) -> Vec<ScriptExecution> {
-    let parsed = fragment
+    fragment
         .split(COMMAND_END)
-        .collect::<Vec<&str>>();
-
-    let commands = parsed
-        .iter()
         .map(|instruction| {
-            ScriptExecution::Command(ScriptCommand::new(instruction.to_string()))
+            ScriptExecution::Command(
+                ScriptCommand::new(instruction.to_owned())
+            )
         })
-        .collect::<Vec<ScriptExecution>>();
-
-    commands
+        .collect::<Vec<ScriptExecution>>()
 }
 
 fn parse_block(fragment: String) -> Vec<ScriptExecution> {
@@ -411,7 +470,7 @@ impl Script {
     }
 
     pub fn run(&self) {
-        let mut variables: Variables = HashMap::new();
+        let variables: Variables = HashMap::new();
 
         for execution in &self.executions {
             match execution {
