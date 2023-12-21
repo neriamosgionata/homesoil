@@ -13,6 +13,7 @@ use crate::events::{ACTUATOR_CHANGE_ONLINE_EVENT, ACTUATOR_NAME_CHANGE_EVENT, AC
 use crate::models::{Actuator};
 use crate::schema::actuators;
 use crate::schema::actuators::{online, updated_at};
+use anyhow::{Error, Result};
 
 pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -235,4 +236,25 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
             ).unwrap();
         }
     };
+}
+
+pub fn send_message_to_actuator(actuator_id: i32, message: &String) -> Result<String> {
+    let conn = &mut connect()?;
+
+    let actuator = actuators::table
+        .filter(actuators::id.eq(actuator_id))
+        .get_result::<Actuator>(conn)
+        .expect("Error loading actuator");
+
+    let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
+
+    match CoAPClient::post(&address, message.as_bytes().to_vec()) {
+        Ok(res) => {
+            let payload = String::from_utf8(res.message.payload).expect("Error parsing payload");
+            Ok(payload)
+        }
+        Err(_) => {
+            Ok("KO".to_string())
+        }
+    }
 }

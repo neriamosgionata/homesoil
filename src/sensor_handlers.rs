@@ -13,6 +13,7 @@ use crate::events::{SENSOR_CHANGE_ONLINE_EVENT, SENSOR_NAME_CHANGE_EVENT, SENSOR
 use crate::models::Sensor;
 use crate::schema::sensors;
 use crate::schema::sensors::{online, updated_at};
+use anyhow::{Error, Result};
 
 pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
@@ -228,4 +229,31 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
             ).unwrap();
         }
     };
+}
+
+pub fn send_message_to_sensor(sensor_id: i32, message: &String) -> Result<String> {
+    let conn = &mut connect()?;
+
+    let sensor = match sensors::table
+        .filter(sensors::id.eq(sensor_id))
+        .get_result::<Sensor>(conn) {
+        Ok(sensor) => {
+            sensor
+        }
+        Err(_) => {
+            return Err(Error::msg("Error loading sensor"));
+        }
+    };
+
+    let address = "coap://".to_owned() + sensor.get_ip_address() + ":" + sensor.get_port().to_string().as_str();
+
+    match CoAPClient::post(&address, message.as_bytes().to_vec()) {
+        Ok(res) => {
+            let payload = String::from_utf8(res.message.payload).expect("Error parsing payload");
+            Ok(payload)
+        }
+        Err(_) => {
+            Err(Error::msg("Error sending message to sensor"))
+        }
+    }
 }
