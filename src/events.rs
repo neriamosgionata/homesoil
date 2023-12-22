@@ -9,6 +9,7 @@ use crate::sensor_methods::{change_sensor_name, get_sensor_readings};
 use diesel::prelude::*;
 use crate::actuator_methods::change_actuator_name;
 use crate::CoAPClient;
+use crate::helper::send_message_to_dashboard;
 use crate::script_parser::{CommandFunctionResult, Script};
 
 //GENERIC
@@ -265,8 +266,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         },
     );
-
-
+    
     socket.on(
         SCRIPT_EVENT,
         |s: SocketRef, data: Data<String>| {
@@ -275,7 +275,11 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             let script = match Script::parse(payload) {
                 Ok(script) => script,
                 Err(e) => {
-                    println!("Error parsing script: {:?}", e);
+                    match send_message_to_dashboard(&s, format!("Error parsing script: {:?}", e).to_string()) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    };
+
                     return;
                 }
             };
@@ -286,13 +290,19 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 Ok(res) => {
                     match res {
                         CommandFunctionResult::Error(e) => {
-                            println!("Error running script: {:?}", e);
+                            match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
+                                Ok(_) => {}
+                                Err(_) => {}
+                            };
                         }
                         _ => {}
                     }
                 }
                 Err(e) => {
-                    println!("Error running script: {:?}", e);
+                    match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    };
                 }
             }
         },

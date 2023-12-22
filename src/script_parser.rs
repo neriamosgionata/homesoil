@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use regex::Regex;
 use anyhow::{anyhow, Error, Result};
-use serde_json::json;
 use socketioxide::extract::SocketRef;
 use crate::actuator_handlers::send_message_to_actuator;
 use crate::condition_parser::parse_condition;
-use crate::events::MESSAGE_SENT_EVENT;
+use crate::helper::send_message_to_dashboard;
 use crate::sensor_handlers::send_message_to_sensor;
 
 type Command = &'static str;
@@ -480,12 +479,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let message = compute_message_with_variables(message, variables);
 
-            match socket.broadcast().emit(
-                MESSAGE_SENT_EVENT,
-                json!({
-                    "message": message,
-                }),
-            ) {
+            match send_message_to_dashboard(socket, message) {
                 Ok(_) => {}
                 Err(e) => {
                     return CommandFunctionResult::Error(e.to_string());

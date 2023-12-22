@@ -32,3 +32,5 @@ pub mod actuator_methods;
 pub mod script_parser;
 pub mod script_runner;
 pub mod condition_parser;
+
+pub mod helper;
