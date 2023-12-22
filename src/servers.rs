@@ -9,8 +9,9 @@ use axum::routing::get;
 use axum::Router;
 use axum::Server as AxumServer;
 use axum_util::cors::CorsLayer;
+use serde::Deserialize;
 use serde_json::json;
-use socketioxide::extract::SocketRef;
+use socketioxide::extract::{Data, SocketRef};
 use tokio::runtime::Runtime;
 use crate::actuator_handlers::ping_actuator;
 use crate::actuator_methods::get_all_registered_actuators;
@@ -18,6 +19,10 @@ use crate::sensor_methods::{get_all_registered_sensors, get_all_last_sensor_read
 use crate::events::{ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
 use crate::sensor_handlers::ping_sensor;
 
+#[derive(Debug, Deserialize)]
+struct AuthData {
+    token: String,
+}
 
 pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
@@ -26,7 +31,15 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
         .transports([TransportType::Websocket, TransportType::Polling])
         .build_layer();
 
-    io.ns("/", |socket: SocketRef| {
+    io.ns("/", move |socket: SocketRef, Data(auth): Data<AuthData>| {
+        let login_token = std::env::var("LOGIN_TOKEN").expect("LOGIN_TOKEN must be set");
+
+        if auth.token.is_empty() || auth.token != login_token {
+            println!("Invalid token, disconnecting socket : {:?}", socket.id);
+            socket.disconnect().ok();
+            return;
+        }
+
         println!("Socket connected : {:?}", socket.id);
 
         register_all_callbacks(&socket);

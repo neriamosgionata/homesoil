@@ -34,3 +34,4 @@ pub mod script_runner;
 pub mod condition_parser;
 
 pub mod helper;
+pub mod auth;
