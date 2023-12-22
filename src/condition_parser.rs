@@ -1,6 +1,5 @@
 type Operator = &'static str;
 
-use std::ops::Index;
 use anyhow::{anyhow, Result};
 use crate::script_parser::{Args, Value, Variables};
 
@@ -52,7 +51,7 @@ fn match_operator(operator: &Value) -> Result<Operator> {
 }
 
 #[derive(Clone)]
-struct Expression {
+pub struct Expression {
     left: Value,
     operator: Operator,
     right: Value,

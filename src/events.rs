@@ -9,6 +9,11 @@ use crate::sensor_methods::{change_sensor_name, get_sensor_readings};
 use diesel::prelude::*;
 use crate::actuator_methods::change_actuator_name;
 use crate::CoAPClient;
+use crate::script_parser::{CommandFunctionResult, Script};
+
+//GENERIC
+pub const MESSAGE_SENT_EVENT: &str = "message-sent";
+pub const SCRIPT_EVENT: &str = "script";
 
 //SENSORS
 pub const ALL_SENSORS_EVENT: &str = "all-sensors";
@@ -257,6 +262,38 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }
                 }
                 Err(_) => {}
+            }
+        },
+    );
+
+
+    socket.on(
+        SCRIPT_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            let script = match Script::parse(payload) {
+                Ok(script) => script,
+                Err(e) => {
+                    println!("Error parsing script: {:?}", e);
+                    return;
+                }
+            };
+
+            let res = script.run(&s);
+
+            match res {
+                Ok(res) => {
+                    match res {
+                        CommandFunctionResult::Error(e) => {
+                            println!("Error running script: {:?}", e);
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    println!("Error running script: {:?}", e);
+                }
             }
         },
     );

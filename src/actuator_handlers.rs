@@ -13,7 +13,7 @@ use crate::events::{ACTUATOR_CHANGE_ONLINE_EVENT, ACTUATOR_NAME_CHANGE_EVENT, AC
 use crate::models::{Actuator};
 use crate::schema::actuators;
 use crate::schema::actuators::{online, updated_at};
-use anyhow::{Error, Result};
+use anyhow::{Result};
 
 pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<SocketAddr>) -> BoxFuture<'a, String> {
     async move {
