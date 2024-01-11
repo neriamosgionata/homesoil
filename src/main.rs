@@ -13,12 +13,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let current_ip_address = match local_ip() {
+    let mut current_ip_address = match local_ip() {
         Ok(ip) => ip.to_string(),
         Err(_) => {
             panic!("Error getting local IP address");
         }
     };
+
+    if std::env::var("IS_DEV").is_ok() {
+        current_ip_address = "127.0.0.1".to_string();
+    }
 
     let current_ip_address_socket_io = format!("{}:4000", current_ip_address);
     let current_ip_address_coap = format!("{}:5683", current_ip_address);
