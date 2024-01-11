@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use diesel::{insert_into, update};
 use diesel::prelude::*;
 
@@ -32,17 +32,29 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
 
     new_actuator.set_name(Some("Actuator".to_string()));
 
-    insert_into(actuators::table)
+    let res = insert_into(actuators::table)
         .values(&new_actuator)
-        .execute(conn)
-        .expect("Error saving new actuator");
+        .execute(conn);
+
+    match res {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(Error::from(e));
+        }
+    }
 
     let sensor = actuators::table
         .filter(ip_address.like(&new_actuator.get_ip_address()))
-        .get_result(conn)
-        .expect("Error loading actuator");
+        .get_result(conn);
 
-    Ok(sensor)
+    return match sensor {
+        Ok(sensor) => {
+            Ok(sensor)
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
 }
 
 pub fn unregister_actuator(payload: String) -> Result<Actuator> {
@@ -52,15 +64,27 @@ pub fn unregister_actuator(payload: String) -> Result<Actuator> {
 
     let actuator = actuators::table
         .filter(id.eq(actuator_unregister.get_id()))
-        .get_result::<Actuator>(conn)
-        .expect("Error loading actuator");
+        .get_result::<Actuator>(conn);
 
-    diesel::delete(actuators::table
+    match actuator {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(Error::from(e));
+        }
+    };
+
+    let res = diesel::delete(actuators::table
         .filter(id.eq(actuator_unregister.get_id())))
-        .execute(conn)
-        .expect("Error deleting actuator");
+        .execute(conn);
 
-    Ok(actuator)
+    return match res {
+        Ok(_) => {
+            Ok(actuator.unwrap())
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
 }
 
 pub fn change_actuator_name(payload: String) -> Result<Actuator> {
@@ -70,17 +94,29 @@ pub fn change_actuator_name(payload: String) -> Result<Actuator> {
 
     update_sensor_name.set_updated_at(chrono::Local::now().naive_local());
 
-    update(actuators::table.find(update_sensor_name.get_id()))
+    let res = update(actuators::table.find(update_sensor_name.get_id()))
         .set((name.eq(update_sensor_name.get_name()), updated_at.eq(update_sensor_name.get_updated_at())))
-        .execute(conn)
-        .expect("Error updating actuator");
+        .execute(conn);
+
+    match res {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(Error::from(e));
+        }
+    }
 
     let sensor = actuators::table
         .filter(id.eq(update_sensor_name.get_id()))
-        .get_result(conn)
-        .expect("Error loading actuator");
+        .get_result(conn);
 
-    Ok(sensor)
+    return match sensor {
+        Ok(sensor) => {
+            Ok(sensor)
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
 }
 
 pub fn change_actuator_state(payload: String) -> Result<Actuator> {
@@ -90,25 +126,43 @@ pub fn change_actuator_state(payload: String) -> Result<Actuator> {
 
     update_actuator_state.set_updated_at(chrono::Local::now().naive_local());
 
-    update(actuators::table.find(update_actuator_state.get_id()))
+    let res = update(actuators::table.find(update_actuator_state.get_id()))
         .set((state.eq(update_actuator_state.get_state()), updated_at.eq(update_actuator_state.get_updated_at())))
-        .execute(conn)
-        .expect("Error updating actuator");
+        .execute(conn);
+
+    match res {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(Error::from(e));
+        }
+    }
 
     let sensor = actuators::table
         .filter(id.eq(update_actuator_state.get_id()))
-        .get_result(conn)
-        .expect("Error loading actuator");
+        .get_result(conn);
 
-    Ok(sensor)
+    return match sensor {
+        Ok(sensor) => {
+            Ok(sensor)
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
 }
 
 pub fn get_all_registered_actuators() -> Result<Vec<Actuator>> {
     let conn = &mut connect()?;
 
     let actuators = actuators::table
-        .get_results(conn)
-        .expect("Error loading actuators");
+        .get_results(conn);
 
-    Ok(actuators)
+    return match actuators {
+        Ok(actuators) => {
+            Ok(actuators)
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
 }
