@@ -132,6 +132,10 @@ pub fn read_sensor(payload: String) -> Result<SensorRead> {
 
     new_sensor_read.set_created_at(chrono::Local::now().naive_local());
 
+    sensors::table.find(new_sensor_read.get_sensor_id())
+        .get_result::<Sensor>(conn)
+        .expect("Error loading sensor");
+
     insert_into(sensor_reads::table)
         .values(&new_sensor_read)
         .execute(conn)

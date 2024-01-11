@@ -284,9 +284,21 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                                     "actuator_id": actuator.get_id(),
                              }),
                     ) {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            match s.emit(
+                                ACTUATOR_UNREGISTER_EVENT,
+                                json!({
+                                    "actuator_id": actuator.get_id(),
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    println!("Error emitting actuator unregister event: {:?}", e);
+                                }
+                            }
+                        }
                         Err(e) => {
-                            println!("Error emitting actuator unregister event: {:?}", e);
+                            println!("Error emitting actuator unregister event broadcast: {:?}", e);
                         }
                     }
                 }
@@ -310,9 +322,21 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                                     "sensor_id": sensor.get_id(),
                              }),
                     ) {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            match s.emit(
+                                SENSOR_UNREGISTER_EVENT,
+                                json!({
+                                    "sensor_id": sensor.get_id(),
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    println!("Error emitting sensor unregister event: {:?}", e);
+                                }
+                            }
+                        }
                         Err(e) => {
-                            println!("Error emitting sensor unregister event: {:?}", e);
+                            println!("Error emitting sensor unregister event broadcast: {:?}", e);
                         }
                     }
                 }
