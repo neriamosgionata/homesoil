@@ -138,7 +138,23 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }),
                 ) {
                     Ok(_) => {}
-                    Err(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event: {:?}", e);
+                    }
+                }
+
+                match s.broadcast().emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                        "actuator_id": actuator.get_id(),
+                        "actuator_state": uas.get_state(),
+                        "updated_at": actuator.get_updated_at()
+                    }),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event broadcast: {:?}", e);
+                    }
                 }
 
                 std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -167,11 +183,29 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         }),
                 ) {
                     Ok(_) => {}
-                    Err(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event: {:?}", e);
+                    }
                 }
-            } else {
-                println!("Error changing actuator state");
+
+                match s.broadcast().emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                            "actuator_id": actuator.get_id(),
+                            "actuator_state": uas.get_state(),
+                            "updated_at": actuator.get_updated_at()
+                        }),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event broadcast: {:?}", e);
+                    }
+                }
+
+                return;
             }
+
+            println!("Error changing actuator state");
         },
     );
 
@@ -250,7 +284,23 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }),
                 ) {
                     Ok(_) => {}
-                    Err(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event: {:?}", e);
+                    }
+                }
+
+                match s.broadcast().emit(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                        "actuator_id": actuator.get_id(),
+                        "actuator_state": uas.get_state(),
+                        "updated_at": actuator.get_updated_at()
+                    }),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error emitting actuator state change event: {:?}", e);
+                    }
                 }
             } else {
                 println!("Error changing actuator state");
@@ -276,7 +326,23 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         }),
                     ) {
                         Ok(_) => {}
-                        Err(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor name change event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SENSOR_NAME_CHANGE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "sensor_name": sensor.get_name(),
+                                "updated_at": sensor.get_updated_at(),
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor name change event broadcast: {:?}", e);
+                        }
                     }
                 }
                 Err(_) => {}
@@ -302,7 +368,23 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         }),
                     ) {
                         Ok(_) => {}
-                        Err(_) => {}
+                        Err(e) => {
+                            println!("Error emitting actuator name change event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        ACTUATOR_NAME_CHANGE_EVENT,
+                        json!({
+                                "actuator_id": actuator.get_id(),
+                                "actuator_name": actuator.get_name(),
+                                "updated_at": actuator.get_updated_at(),
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting actuator name change event broadcast: {:?}", e);
+                        }
                     }
                 }
                 Err(_) => {}
@@ -333,6 +415,18 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                                 Ok(_) => {}
                                 Err(e) => {
                                     println!("Error emitting actuator unregister event: {:?}", e);
+                                }
+                            }
+
+                            match s.broadcast().emit(
+                                ACTUATOR_UNREGISTER_EVENT,
+                                json!({
+                                    "actuator_id": actuator.get_id(),
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    println!("Error emitting actuator unregister event broadcast: {:?}", e);
                                 }
                             }
                         }
@@ -373,6 +467,18 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                                     println!("Error emitting sensor unregister event: {:?}", e);
                                 }
                             }
+
+                            match s.broadcast().emit(
+                                SENSOR_UNREGISTER_EVENT,
+                                json!({
+                                    "sensor_id": sensor.get_id(),
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    println!("Error emitting sensor unregister event broadcast: {:?}", e);
+                                }
+                            }
                         }
                         Err(e) => {
                             println!("Error emitting sensor unregister event broadcast: {:?}", e);
@@ -411,7 +517,9 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         CommandFunctionResult::Error(e) => {
                             match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
                                 Ok(_) => {}
-                                Err(_) => {}
+                                Err(e) => {
+                                    println!("Error sending message to dashboard: {:?}", e);
+                                }
                             };
                         }
                         _ => {}
@@ -420,7 +528,9 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 Err(e) => {
                     match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
                         Ok(_) => {}
-                        Err(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
                     };
                 }
             }

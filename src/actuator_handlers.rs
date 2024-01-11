@@ -41,7 +41,7 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                         ) {
                             Ok(_) => {}
                             Err(e) => {
-                                println!("Error emitting actuator register event: {:?}", e);
+                                println!("Error emitting actuator register event broadcast: {:?}", e);
                             }
                         }
                     }
@@ -347,7 +347,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                         ACTUATOR_CHANGE_ONLINE_EVENT,
                         json!({
                                     "actuator_id": actuator.get_id(),
-                                    "online": true,
+                                    "online": false,
                                     "updated_at": uat,
                              }),
                     ) {
@@ -366,7 +366,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                         ACTUATOR_CHANGE_ONLINE_EVENT,
                         json!({
                                     "actuator_id": actuator.get_id(),
-                                    "online": true,
+                                    "online": false,
                                     "updated_at": uat,
                              }),
                     ) {

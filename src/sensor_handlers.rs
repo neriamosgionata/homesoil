@@ -48,6 +48,29 @@ pub fn sensor_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                     None => {}
                 }
 
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            SENSOR_REGISTER_EVENT,
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                                    "sensor_name": sensor.get_name(),
+                                    "sensor_ip_address": sensor.get_ip_address(),
+                                    "sensor_port": sensor.get_port(),
+                                    "sensor_type": sensor.get_sensor_type(),
+                                    "online": sensor.get_online(),
+                                    "created_at": sensor.get_created_at(),
+                             }),
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting sensor register event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+
                 sensor.get_id().to_string()
             }
             Err(e) => {
@@ -72,6 +95,23 @@ pub fn sensor_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                 match socket.of("/") {
                     Some(ns) => {
                         match ns.broadcast().emit(
+                            SENSOR_UNREGISTER_EVENT,
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                             }),
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting sensor unregister event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
                             SENSOR_UNREGISTER_EVENT,
                             json!({
                                     "sensor_id": sensor.get_id(),
@@ -121,13 +161,33 @@ pub fn sensor_read_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<So
                         {
                             Ok(_) => {}
                             Err(e) => {
-                                println!("Error emitting sensor read event: {:?}", e);
+                                println!("Error emitting sensor read event broadcast: {:?}", e);
                             }
                         }
                     }
                     None => {}
                 }
 
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            SENSOR_READ_EVENT,
+                            json!({
+                                    "id": sensor_read.get_id(),
+                                    "sensor_id": sensor_read.get_sensor_id(),
+                                    "sensor_value": sensor_read.get_sensor_value(),
+                                    "created_at": sensor_read.get_created_at(),
+                                }),
+                        )
+                        {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting sensor read event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
 
                 "OK".to_string()
             }
@@ -162,13 +222,31 @@ pub fn sensor_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequest<
                         ) {
                             Ok(_) => {}
                             Err(e) => {
-                                println!("Error emitting sensor name changed event: {:?}", e);
+                                println!("Error emitting sensor name changed event broadcast: {:?}", e);
                             }
                         }
                     }
                     None => {}
                 }
 
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            SENSOR_NAME_CHANGE_EVENT,
+                            json!({
+                                    "sensor_id": sensor.get_id(),
+                                    "sensor_name": sensor.get_name(),
+                                    "updated_at": sensor.get_updated_at(),
+                                }),
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting sensor name changed event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
 
                 "OK".to_string()
             }
@@ -207,14 +285,43 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 }
             }
 
-            socket.of("/").unwrap().broadcast().emit(
-                SENSOR_CHANGE_ONLINE_EVENT,
-                json!({
-                        "sensor_id": sensor.get_id(),
-                        "online": true,
-                        "updated_at": uat,
-                 }),
-            ).unwrap();
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.broadcast().emit(
+                        SENSOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "online": true,
+                                "updated_at": uat,
+                         }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor online event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.emit(
+                        SENSOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "online": true,
+                                "updated_at": uat,
+                         }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor online event: {:?}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
         Err(_) => {
             let conn = &mut connect().unwrap();
@@ -233,14 +340,43 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 }
             }
 
-            socket.of("/").unwrap().broadcast().emit(
-                SENSOR_CHANGE_ONLINE_EVENT,
-                json!({
-                        "sensor_id": sensor.get_id(),
-                        "online": false,
-                        "updated_at": uat,
-                 }),
-            ).unwrap();
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.broadcast().emit(
+                        SENSOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "online": false,
+                                "updated_at": uat,
+                         }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor online event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.emit(
+                        SENSOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                "sensor_id": sensor.get_id(),
+                                "online": false,
+                                "updated_at": uat,
+                         }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor online event: {:?}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     };
 }
