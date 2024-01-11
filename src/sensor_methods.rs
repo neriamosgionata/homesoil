@@ -85,20 +85,20 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
 pub fn unregister_sensor(payload: String) -> Result<Sensor> {
     let conn = &mut connect()?;
 
-    let new_sensor = from_str::<SensorUnregister>(&payload)?;
+    let sensor_unregister = from_str::<SensorUnregister>(&payload)?;
 
     let sensor = sensors::table
-        .filter(id.eq(new_sensor.get_id()))
+        .filter(id.eq(sensor_unregister.get_id()))
         .get_result::<Sensor>(conn)
         .expect("Error loading sensor");
 
     diesel::delete(sensor_reads::table
-        .filter(sensor_id.eq(new_sensor.get_id())))
+        .filter(sensor_id.eq(sensor_unregister.get_id())))
         .execute(conn)
         .expect("Error deleting sensor reads");
 
     diesel::delete(sensors::table
-        .filter(id.eq(new_sensor.get_id())))
+        .filter(id.eq(sensor_unregister.get_id())))
         .execute(conn)
         .expect("Error deleting sensor");
 

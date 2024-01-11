@@ -48,19 +48,19 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
 pub fn unregister_actuator(payload: String) -> Result<Actuator> {
     let conn = &mut connect()?;
 
-    let new_actuator = from_str::<SensorUnregister>(&payload)?;
+    let actuator_unregister = from_str::<SensorUnregister>(&payload)?;
 
-    let sensor = actuators::table
-        .filter(id.eq(new_actuator.get_id()))
+    let actuator = actuators::table
+        .filter(id.eq(actuator_unregister.get_id()))
         .get_result::<Actuator>(conn)
         .expect("Error loading actuator");
 
     diesel::delete(actuators::table
-        .filter(id.eq(new_actuator.get_id())))
+        .filter(id.eq(actuator_unregister.get_id())))
         .execute(conn)
         .expect("Error deleting actuator");
 
-    Ok(sensor)
+    Ok(actuator)
 }
 
 pub fn change_actuator_name(payload: String) -> Result<Actuator> {
