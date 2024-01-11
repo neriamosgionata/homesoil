@@ -752,7 +752,7 @@ impl Value {
         match self {
             Value::None => "".to_string(),
             Value::String(s) => s.to_string(),
-            Value::Variable(s) => variables.get(s).expect(format!("Variable {} not found", s).as_str()).to_string(variables),
+            Value::Variable(s) => variables.get(s).unwrap().to_string(variables),
             Value::Int32(n) => n.to_string(),
             Value::Int64(n) => n.to_string(),
             Value::Float32(n) => n.to_string(),

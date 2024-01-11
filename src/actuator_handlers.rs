@@ -201,10 +201,17 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
 
                 let uat = chrono::Local::now().naive_local();
 
-                update(actuators::table.find(actuator.get_id()))
+                let res = update(actuators::table.find(actuator.get_id()))
                     .set((online.eq(true), updated_at.eq(uat)))
-                    .execute(conn)
-                    .expect("Error updating actuator");
+                    .execute(conn);
+
+                match res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Error updating actuator: {:?}", e);
+                        return;
+                    }
+                }
 
                 socket.of("/").unwrap().broadcast().emit(
                     ACTUATOR_CHANGE_ONLINE_EVENT,
@@ -221,10 +228,17 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
 
             let uat = chrono::Local::now().naive_local();
 
-            update(actuators::table.find(actuator.get_id()))
+            let res = update(actuators::table.find(actuator.get_id()))
                 .set((online.eq(false), updated_at.eq(uat)))
-                .execute(conn)
-                .expect("Error updating actuator");
+                .execute(conn);
+
+            match res {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error updating actuator: {:?}", e);
+                    return;
+                }
+            }
 
             socket.of("/").unwrap().broadcast().emit(
                 ACTUATOR_CHANGE_ONLINE_EVENT,
@@ -243,15 +257,28 @@ pub fn send_message_to_actuator(actuator_id: i32, message: &String) -> Result<St
 
     let actuator = actuators::table
         .filter(actuators::id.eq(actuator_id))
-        .get_result::<Actuator>(conn)
-        .expect("Error loading actuator");
+        .get_result::<Actuator>(conn);
+
+    if actuator.is_err() {
+        return Ok("KO".to_string());
+    }
+
+    let actuator = actuator.unwrap();
 
     let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
 
     match CoAPClient::post(&address, message.as_bytes().to_vec()) {
         Ok(res) => {
-            let payload = String::from_utf8(res.message.payload).expect("Error parsing payload");
-            Ok(payload)
+            let payload = String::from_utf8(res.message.payload);
+
+            match payload {
+                Ok(payload) => {
+                    Ok(payload)
+                }
+                Err(_) => {
+                    Ok("KO".to_string())
+                }
+            }
         }
         Err(_) => {
             Ok("KO".to_string())

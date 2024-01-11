@@ -88,8 +88,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let actuator = actuators::table
                 .filter(id.eq(actuator_id))
-                .get_result::<Actuator>(conn)
-                .expect("Error loading actuator");
+                .get_result::<Actuator>(conn);
+
+            match actuator {
+                Ok(_) => {}
+                Err(_) => {
+                    println!("Error loading actuator");
+                    return;
+                }
+            }
+
+            let actuator = actuator.unwrap();
 
             let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
 
@@ -108,10 +117,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
                 uas.set_updated_at(chrono::Local::now().naive_local());
 
-                update(actuators::table.find(actuator_id))
+                let res = update(actuators::table.find(actuator_id))
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
-                    .execute(conn)
-                    .expect("Error updating actuator");
+                    .execute(conn);
+
+                match res {
+                    Ok(_) => {}
+                    Err(_) => {
+                        println!("Error updating actuator");
+                        return;
+                    }
+                }
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,
@@ -130,10 +146,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 uas.set_state(false);
                 uas.set_updated_at(chrono::Local::now().naive_local());
 
-                update(actuators::table.find(actuator_id))
+                let res = update(actuators::table.find(actuator_id))
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
-                    .execute(conn)
-                    .expect("Error updating actuator");
+                    .execute(conn);
+
+                match res {
+                    Ok(_) => {}
+                    Err(_) => {
+                        println!("Error updating actuator");
+                        return;
+                    }
+                }
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,
@@ -161,8 +184,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
             let actuator = actuators::table
                 .filter(id.eq(actuator_id))
-                .get_result::<Actuator>(conn)
-                .expect("Error loading actuator");
+                .get_result::<Actuator>(conn);
+
+            match actuator {
+                Ok(_) => {}
+                Err(_) => {
+                    println!("Error loading actuator");
+                    return;
+                }
+            }
+
+            let actuator = actuator.unwrap();
 
             let address = "coap://".to_owned() + actuator.get_ip_address() + ":" + actuator.get_port().to_string().as_str();
 
@@ -197,10 +229,17 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
                 uas.set_updated_at(chrono::Local::now().naive_local());
 
-                update(actuators::table.find(actuator_id))
+                let res = update(actuators::table.find(actuator_id))
                     .set((updated_at.eq(uas.get_updated_at()), state.eq(uas.get_state())))
-                    .execute(conn)
-                    .expect("Error updating actuator");
+                    .execute(conn);
+
+                match res {
+                    Ok(_) => {}
+                    Err(_) => {
+                        println!("Error updating actuator");
+                        return;
+                    }
+                }
 
                 match s.emit(
                     ACTUATOR_STATE_CHANGE_EVENT,

@@ -195,10 +195,17 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
 
             let uat = chrono::Local::now().naive_local();
 
-            update(sensors::table.find(sensor.get_id()))
+            let res = update(sensors::table.find(sensor.get_id()))
                 .set((online.eq(true), updated_at.eq(uat)))
-                .execute(conn)
-                .expect("Error updating actuator");
+                .execute(conn);
+
+            match res {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error updating sensor: {:?}", e);
+                    return;
+                }
+            }
 
             socket.of("/").unwrap().broadcast().emit(
                 SENSOR_CHANGE_ONLINE_EVENT,
@@ -214,10 +221,17 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
 
             let uat = chrono::Local::now().naive_local();
 
-            update(sensors::table.find(sensor.get_id()))
+            let res = update(sensors::table.find(sensor.get_id()))
                 .set((online.eq(false), updated_at.eq(uat)))
-                .execute(conn)
-                .expect("Error updating actuator");
+                .execute(conn);
+
+            match res {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error updating sensor: {:?}", e);
+                    return;
+                }
+            }
 
             socket.of("/").unwrap().broadcast().emit(
                 SENSOR_CHANGE_ONLINE_EVENT,
@@ -249,8 +263,16 @@ pub fn send_message_to_sensor(sensor_id: i32, message: &String) -> Result<String
 
     match CoAPClient::post(&address, message.as_bytes().to_vec()) {
         Ok(res) => {
-            let payload = String::from_utf8(res.message.payload).expect("Error parsing payload");
-            Ok(payload)
+            let payload = String::from_utf8(res.message.payload);
+
+            match payload {
+                Ok(payload) => {
+                    Ok(payload)
+                }
+                Err(_) => {
+                    Err(Error::msg("Error parsing payload"))
+                }
+            }
         }
         Err(_) => {
             Err(Error::msg("Error sending message to sensor"))
