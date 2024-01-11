@@ -39,8 +39,30 @@ pub fn actuator_register_handler<'a>(socket: &'a SocketIo, request: &'a CoapRequ
                                     "created_at": actuator.get_created_at(),
                              }),
                         ) {
-                            Ok(_) => {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator register event: {:?}", e);
                             }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            ACTUATOR_REGISTER_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "actuator_name": actuator.get_name(),
+                                    "actuator_ip_address": actuator.get_ip_address(),
+                                    "actuator_port": actuator.get_port(),
+                                    "actuator_pulse": actuator.get_pulse(),
+                                    "online": actuator.get_online(),
+                                    "created_at": actuator.get_created_at(),
+                             }),
+                        ) {
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting actuator register event: {:?}", e);
                             }
@@ -81,8 +103,24 @@ pub fn actuator_unregister_handler<'a>(socket: &'a SocketIo, request: &'a CoapRe
                                     "actuator_id": actuator.get_id(),
                              }),
                         ) {
-                            Ok(_) => {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator unregister event broadcast: {:?}", e);
                             }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            ACTUATOR_UNREGISTER_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                             }),
+                        ) {
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting actuator unregister event: {:?}", e);
                             }
@@ -122,8 +160,26 @@ pub fn actuator_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                                     "updated_at": actuator.get_updated_at(),
                                 }),
                         ) {
-                            Ok(_) => {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator name changed event broadcast: {:?}", e);
                             }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            ACTUATOR_NAME_CHANGE_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "actuator_name": actuator.get_name(),
+                                    "updated_at": actuator.get_updated_at(),
+                                }),
+                        ) {
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting actuator name changed event: {:?}", e);
                             }
@@ -131,7 +187,6 @@ pub fn actuator_update_handler<'a>(socket: &'a SocketIo, request: &'a CoapReques
                     }
                     None => {}
                 }
-
 
                 "OK".to_string()
             }
@@ -164,8 +219,26 @@ pub fn actuator_update_state_handler<'a>(socket: &'a SocketIo, request: &'a Coap
                                     "updated_at": actuator.get_updated_at(),
                                 }),
                         ) {
-                            Ok(_) => {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator state changed event broadcast: {:?}", e);
                             }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            ACTUATOR_STATE_CHANGE_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "actuator_state": actuator.get_state(),
+                                    "updated_at": actuator.get_updated_at(),
+                                }),
+                        ) {
+                            Ok(_) => {}
                             Err(e) => {
                                 println!("Error emitting actuator state changed event: {:?}", e);
                             }
@@ -173,7 +246,6 @@ pub fn actuator_update_state_handler<'a>(socket: &'a SocketIo, request: &'a Coap
                     }
                     None => {}
                 }
-
 
                 "OK".to_string()
             }
@@ -213,14 +285,43 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                     }
                 }
 
-                socket.of("/").unwrap().broadcast().emit(
-                    ACTUATOR_CHANGE_ONLINE_EVENT,
-                    json!({
-                            "actuator_id": actuator.get_id(),
-                            "online": true,
-                            "updated_at": uat,
-                     }),
-                ).unwrap();
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.broadcast().emit(
+                            ACTUATOR_CHANGE_ONLINE_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "online": true,
+                                    "updated_at": uat,
+                             }),
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator online event broadcast: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+
+                match socket.of("/") {
+                    Some(ns) => {
+                        match ns.emit(
+                            ACTUATOR_CHANGE_ONLINE_EVENT,
+                            json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "online": true,
+                                    "updated_at": uat,
+                             }),
+                        ) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Error emitting actuator online event: {:?}", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
             }
         }
         Err(_) => {
@@ -240,14 +341,43 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                 }
             }
 
-            socket.of("/").unwrap().broadcast().emit(
-                ACTUATOR_CHANGE_ONLINE_EVENT,
-                json!({
-                        "actuator_id": actuator.get_id(),
-                        "online": false,
-                        "updated_at": uat,
-                 }),
-            ).unwrap();
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.broadcast().emit(
+                        ACTUATOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "online": true,
+                                    "updated_at": uat,
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting actuator online event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                None => {}
+            }
+
+            match socket.of("/") {
+                Some(ns) => {
+                    match ns.emit(
+                        ACTUATOR_CHANGE_ONLINE_EVENT,
+                        json!({
+                                    "actuator_id": actuator.get_id(),
+                                    "online": true,
+                                    "updated_at": uat,
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting actuator online event: {:?}", e);
+                        }
+                    }
+                }
+                None => {}
+            }
         }
     };
 }
