@@ -190,3 +190,16 @@ pub async fn run_coap_server(address: &String, socket: &SocketIo) {
             });
     });
 }
+
+pub async fn check_for_old_sensor_reads_records() {
+    spawn(move || {
+        loop {
+            match crate::sensor_methods::delete_old_sensor_reads_records() {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+
+            std::thread::sleep(Duration::from_secs(3600));
+        }
+    });
+}

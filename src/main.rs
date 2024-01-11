@@ -1,6 +1,6 @@
 use dotenv::dotenv;
 use homesoil::db::connect;
-use homesoil::servers::{run_coap_server, run_sensor_health_check, run_socket_server};
+use homesoil::servers::{check_for_old_sensor_reads_records, run_coap_server, run_sensor_health_check, run_socket_server};
 use local_ip_address::local_ip;
 
 #[tokio::main]
@@ -32,6 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_sensor_health_check(&io).await;
 
     run_coap_server(&current_ip_address_coap, &io).await;
+
+    check_for_old_sensor_reads_records().await;
 
     std::thread::park();
 

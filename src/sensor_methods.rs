@@ -265,3 +265,20 @@ pub fn get_sensor_readings(other_sensor_id: i32, from_date: &String, to_date: &S
         }
     };
 }
+
+pub fn delete_old_sensor_reads_records() -> Result<usize> {
+    let conn = &mut connect()?;
+
+    let res = diesel::delete(sensor_reads::table
+        .filter(created_at.lt(chrono::Local::now().naive_local() - chrono::Duration::days(30))))
+        .execute(conn);
+
+    return match res {
+        Ok(res) => {
+            Ok(res)
+        }
+        Err(e) => {
+            Err(Error::from(e))
+        }
+    };
+}
