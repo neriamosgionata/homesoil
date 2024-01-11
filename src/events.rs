@@ -5,9 +5,9 @@ use crate::db::connect;
 use crate::models::{Actuator, GetSensorReadings, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
-use crate::sensor_methods::{change_sensor_name, get_sensor_readings};
+use crate::sensor_methods::{change_sensor_name, get_sensor_readings, unregister_sensor};
 use diesel::prelude::*;
-use crate::actuator_methods::change_actuator_name;
+use crate::actuator_methods::{change_actuator_name, unregister_actuator};
 use crate::CoAPClient;
 use crate::helper::send_message_to_dashboard;
 use crate::script_parser::{CommandFunctionResult, Script};
@@ -31,6 +31,8 @@ pub const SENSOR_CHANGE_ONLINE_EVENT: &str = "sensor-change-online";
 
 pub const RENAME_SENSOR_EVENT: &str = "rename-sensor";
 
+pub const REMOVE_SENSOR_EVENT: &str = "remove-sensor";
+
 
 //ACTUATORS
 
@@ -48,6 +50,8 @@ pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
 pub const ACTUATOR_CHANGE_ONLINE_EVENT: &str = "actuator-change-online";
 
 pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
+
+pub const REMOVE_ACTUATOR_EVENT: &str = "remove-actuator";
 
 
 pub fn register_all_callbacks(socket: &SocketRef) {
@@ -266,7 +270,59 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         },
     );
-    
+
+    socket.on(
+        REMOVE_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            match unregister_actuator(payload) {
+                Ok(actuator) => {
+                    match s.broadcast().emit(
+                        ACTUATOR_UNREGISTER_EVENT,
+                        json!({
+                                    "actuator_id": actuator.get_id(),
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting actuator unregister event: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Error unregistering actuator: {:?}", e);
+                }
+            }
+        },
+    );
+
+    socket.on(
+        REMOVE_SENSOR_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            match unregister_sensor(payload) {
+                Ok(sensor) => {
+                    match s.broadcast().emit(
+                        SENSOR_UNREGISTER_EVENT,
+                        json!({
+                                    "sensor_id": sensor.get_id(),
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting sensor unregister event: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Error unregistering sensor: {:?}", e);
+                }
+            }
+        },
+    );
+
     socket.on(
         SCRIPT_EVENT,
         |s: SocketRef, data: Data<String>| {
