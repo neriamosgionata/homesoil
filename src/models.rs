@@ -661,7 +661,6 @@ impl Script {
 #[diesel(table_name = crate::schema::scripts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewScript {
-    id: i32,
     title: String,
     code: String,
     schedule: Option<String>,
@@ -671,9 +670,8 @@ pub struct NewScript {
 }
 
 impl NewScript {
-    pub fn new(id: i32, code: &str) -> Self {
+    pub fn new(code: &str) -> Self {
         Self {
-            id,
             code: code.to_string(),
             title: "".to_string(),
             schedule: None,
@@ -681,10 +679,6 @@ impl NewScript {
             created_at: chrono::Local::now().naive_local(),
             updated_at: None,
         }
-    }
-
-    pub fn get_id(&self) -> i32 {
-        self.id
     }
 
     pub fn get_code(&self) -> &str {
