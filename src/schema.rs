@@ -15,6 +15,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    scripts (id) {
+        id -> Integer,
+        title -> Text,
+        code -> Text,
+        schedule -> Nullable<Text>,
+        status -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
     sensor_reads (id) {
         id -> Integer,
         sensor_id -> Integer,
@@ -41,6 +53,7 @@ diesel::joinable!(sensor_reads -> sensors (sensor_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     actuators,
+    scripts,
     sensor_reads,
     sensors,
 );

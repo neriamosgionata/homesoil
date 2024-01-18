@@ -35,3 +35,4 @@ pub mod condition_parser;
 
 pub mod helper;
 pub mod auth;
+pub mod script_methods;

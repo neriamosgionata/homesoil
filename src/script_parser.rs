@@ -4,7 +4,8 @@ use anyhow::{anyhow, Error, Result};
 use socketioxide::extract::SocketRef;
 use crate::actuator_handlers::send_message_to_actuator;
 use crate::condition_parser::parse_condition;
-use crate::helper::send_message_to_dashboard;
+use crate::helper::{send_message_to_dashboard, DashboardMessageType};
+use crate::script_methods::get_script;
 use crate::sensor_handlers::send_message_to_sensor;
 
 type Command = &'static str;
@@ -479,7 +480,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let message = compute_message_with_variables(message, variables);
 
-            match send_message_to_dashboard(socket, message) {
+            match send_message_to_dashboard(socket, message, DashboardMessageType::Info) {
                 Ok(_) => {}
                 Err(e) => {
                     return CommandFunctionResult::Error(e.to_string());
@@ -959,11 +960,21 @@ fn parse_execution_step(fragment: String) -> Result<Vec<ScriptExecution>> {
 }
 
 pub struct Script {
+    id: i32,
     executions: Vec<ScriptExecution>,
 }
 
 impl Script {
-    pub fn parse(script: String) -> Result<Script> {
+    pub fn parse(script_id: i32) -> Result<Script> {
+        let script_model = match get_script(script_id) {
+            Ok(script) => script,
+            Err(e) => {
+                return Err(Error::msg(e.to_string()));
+            }
+        };
+
+        let script = script_model.get_code().to_string();
+
         if !script.contains(MAIN_BLOCK_START) || !script.contains(MAIN_BLOCK_END) {
             return Err(Error::msg("Script does not contain main block"));
         }
@@ -979,9 +990,14 @@ impl Script {
 
         Ok(
             Script {
+                id: script_id,
                 executions,
             }
         )
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
     }
 
     pub fn run(&self, socket: &SocketRef) -> Result<CommandFunctionResult> {

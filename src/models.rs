@@ -411,7 +411,6 @@ pub struct GetSensorReadings {
 }
 
 impl GetSensorReadings {
-
     pub fn new(id: i32, from_date: String, to_date: String) -> Self {
         Self {
             id,
@@ -431,7 +430,6 @@ impl GetSensorReadings {
     pub fn get_to_date(&self) -> &String {
         &self.to_date
     }
-
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
@@ -603,3 +601,254 @@ impl ActuatorUnregister {
         self.id
     }
 }
+
+#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
+#[diesel(table_name = crate::schema::scripts)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct Script {
+    id: i32,
+    title: String,
+    code: String,
+    schedule: Option<String>,
+    status: i32,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl Script {
+    pub fn new(id: i32, code: &str) -> Self {
+        Self {
+            id,
+            code: code.to_string(),
+            title: "".to_string(),
+            schedule: None,
+            status: 0,
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn get_title(&self) -> &String {
+        &self.title
+    }
+
+    pub fn get_schedule(&self) -> &Option<String> {
+        &self.schedule
+    }
+
+    pub fn get_status(&self) -> i32 {
+        self.status
+    }
+
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::scripts)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewScript {
+    id: i32,
+    title: String,
+    code: String,
+    schedule: Option<String>,
+    status: i32,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl NewScript {
+    pub fn new(id: i32, code: &str) -> Self {
+        Self {
+            id,
+            code: code.to_string(),
+            title: "".to_string(),
+            schedule: None,
+            status: 0,
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn get_title(&self) -> &String {
+        &self.title
+    }
+
+    pub fn get_schedule(&self) -> &Option<String> {
+        &self.schedule
+    }
+
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct DeleteScript {
+    id: i32,
+}
+
+impl DeleteScript {
+    pub fn new(id: i32) -> Self {
+        Self { id }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+}
+
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UpdateScript {
+    id: i32,
+    code: String,
+    title: String,
+    schedule: Option<String>,
+    status: i32,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl UpdateScript {
+    pub fn new(id: i32, code: &str) -> Self {
+        Self {
+            id,
+            code: code.to_string(),
+            title: "".to_string(),
+            schedule: None,
+            status: 0,
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn get_title(&self) -> &String {
+        &self.title
+    }
+
+    pub fn get_schedule(&self) -> &Option<String> {
+        &self.schedule
+    }
+
+    pub fn get_status(&self) -> i32 {
+        self.status
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    pub fn set_schedule(&mut self, schedule: Option<String>) {
+        self.schedule = schedule;
+    }
+
+    pub fn set_status(&mut self, status: i32) {
+        self.status = status;
+    }
+}
+
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UpdateSchedule {
+    id: i32,
+    schedule: Option<String>,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl UpdateSchedule {
+    pub fn new(id: i32, schedule: Option<String>) -> Self {
+        Self {
+            id,
+            schedule,
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_schedule(&self) -> &Option<String> {
+        &self.schedule
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+
+    pub fn set_schedule(&mut self, schedule: Option<String>) {
+        self.schedule = schedule;
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct RemoveSchedule {
+    id: i32,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl RemoveSchedule {
+    pub fn new(id: i32) -> Self {
+        Self {
+            id,
+            updated_at: None,
+        }
+    }
+
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+}
+

@@ -9,12 +9,12 @@ use crate::sensor_methods::{change_sensor_name, get_sensor_readings, unregister_
 use diesel::prelude::*;
 use crate::actuator_methods::{change_actuator_name, unregister_actuator};
 use crate::CoAPClient;
-use crate::helper::send_message_to_dashboard;
+use crate::helper::{send_message_to_dashboard, DashboardMessageType};
+use crate::script_methods::{delete_script, save_new_script, update_script};
 use crate::script_parser::{CommandFunctionResult, Script};
 
 //GENERIC
 pub const MESSAGE_SENT_EVENT: &str = "message-sent";
-pub const SCRIPT_EVENT: &str = "script";
 
 //SENSORS
 pub const ALL_SENSORS_EVENT: &str = "all-sensors";
@@ -54,6 +54,23 @@ pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
 pub const REMOVE_ACTUATOR_EVENT: &str = "remove-actuator";
 
 
+//SCRIPTS
+pub const RUN_SCRIPT_EVENT: &str = "run-script";
+pub const ADD_SCRIPT_EVENT: &str = "add-script";
+pub const REMOVE_SCRIPT_EVENT: &str = "remove-script";
+pub const MODIFY_SCRIPT_EVENT: &str = "modify-script";
+pub const ADD_SCRIPT_SCHEDULE_EVENT: &str = "add-script-schedule";
+pub const REMOVE_SCRIPT_SCHEDULE_EVENT: &str = "remove-script-schedule";
+
+
+pub const SCRIPT_SAVED_EVENT: &str = "script-saved";
+pub const SCRIPT_DELETED_EVENT: &str = "script-deleted";
+pub const SCRIPT_MODIFIED_EVENT: &str = "script-modified";
+pub const SCRIPT_STATUS_CHANGE_EVENT: &str = "script-status-change";
+pub const SCRIPT_SCHEDULE_ADDED_EVENT: &str = "script-schedule-added";
+pub const SCRIPT_SCHEDULE_REMOVED_EVENT: &str = "script-schedule-removed";
+
+
 pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
         GET_SENSOR_READINGS_EVENT,
@@ -74,7 +91,14 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         Err(_) => {}
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error getting sensor readings: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
             }
         },
     );
@@ -345,7 +369,14 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         }
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error renaming sensor: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
             }
         },
     );
@@ -387,7 +418,14 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                         }
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error renaming actuator: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
             }
         },
     );
@@ -436,7 +474,12 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }
                 }
                 Err(e) => {
-                    println!("Error unregistering actuator: {:?}", e);
+                    match send_message_to_dashboard(&s, format!("Error unregistering actuator: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
                 }
             }
         },
@@ -486,21 +529,26 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }
                 }
                 Err(e) => {
-                    println!("Error unregistering sensor: {:?}", e);
+                    match send_message_to_dashboard(&s, format!("Error unregistering sensor: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
                 }
             }
         },
     );
 
     socket.on(
-        SCRIPT_EVENT,
-        |s: SocketRef, data: Data<String>| {
+        RUN_SCRIPT_EVENT,
+        |s: SocketRef, data: Data<i32>| {
             let payload = data.0;
 
             let script = match Script::parse(payload) {
                 Ok(script) => script,
                 Err(e) => {
-                    match send_message_to_dashboard(&s, format!("Error parsing script: {:?}", e).to_string()) {
+                    match send_message_to_dashboard(&s, format!("Error parsing script: {:?}", e).to_string(), DashboardMessageType::Error) {
                         Ok(_) => {}
                         Err(_) => {}
                     };
@@ -509,13 +557,57 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 }
             };
 
+            match s.emit(
+                SCRIPT_STATUS_CHANGE_EVENT,
+                json!({
+                                    "script_id": script.get_id(),
+                                    "status": 1,
+                             }),
+            ) {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+
+            match s.broadcast().emit(
+                SCRIPT_STATUS_CHANGE_EVENT,
+                json!({
+                                    "script_id": script.get_id(),
+                                    "status": 1,
+                             }),
+            ) {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+
             let res = script.run(&s);
 
             match res {
                 Ok(res) => {
                     match res {
                         CommandFunctionResult::Error(e) => {
-                            match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
+                            match s.emit(
+                                SCRIPT_STATUS_CHANGE_EVENT,
+                                json!({
+                                    "script_id": script.get_id(),
+                                    "status": -1,
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(_) => {}
+                            }
+
+                            match s.broadcast().emit(
+                                SCRIPT_STATUS_CHANGE_EVENT,
+                                json!({
+                                    "script_id": script.get_id(),
+                                    "status": -1,
+                             }),
+                            ) {
+                                Ok(_) => {}
+                                Err(_) => {}
+                            }
+
+                            match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string(), DashboardMessageType::Error) {
                                 Ok(_) => {}
                                 Err(e) => {
                                     println!("Error sending message to dashboard: {:?}", e);
@@ -526,7 +618,246 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     }
                 }
                 Err(e) => {
-                    match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string()) {
+                    match s.emit(
+                        SCRIPT_STATUS_CHANGE_EVENT,
+                        json!({
+                                    "script_id": script.get_id(),
+                                    "status": -2,
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_STATUS_CHANGE_EVENT,
+                        json!({
+                                    "script_id": script.get_id(),
+                                    "status": -2,
+                             }),
+                    ) {
+                        Ok(_) => {}
+                        Err(_) => {}
+                    }
+
+                    match send_message_to_dashboard(&s, format!("Error running script: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
+            }
+        },
+    );
+
+    socket.on(
+        ADD_SCRIPT_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            println!("ADD_SCRIPT_EVENT {}", data.0);
+
+            let payload = data.0;
+
+            match save_new_script(payload) {
+                Ok(script) => {
+                    match s.emit(
+                        SCRIPT_SAVED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting add script event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_SAVED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting add script event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error adding script: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
+            }
+        },
+    );
+
+    socket.on(
+        REMOVE_SCRIPT_EVENT,
+        |s: SocketRef, data: Data<i32>| {
+            let payload = data.0;
+
+            match delete_script(payload) {
+                Ok(script) => {
+                    match s.emit(
+                        SCRIPT_DELETED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting delete script event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_DELETED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting delete script event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error deleting script: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
+            }
+        },
+    );
+
+    socket.on(
+        MODIFY_SCRIPT_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            match update_script(payload) {
+                Ok(script) => {
+                    match s.emit(
+                        SCRIPT_MODIFIED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting update script event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_MODIFIED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting update script event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error updating script: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
+            }
+        },
+    );
+
+    socket.on(
+        ADD_SCRIPT_SCHEDULE_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            match update_script(payload) {
+                Ok(script) => {
+                    match s.emit(
+                        SCRIPT_SCHEDULE_ADDED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting add script schedule event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_SCHEDULE_ADDED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting add script schedule event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error updating script: {:?}", e).to_string(), DashboardMessageType::Error) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error sending message to dashboard: {:?}", e);
+                        }
+                    };
+                }
+            }
+        },
+    );
+
+    socket.on(
+        REMOVE_SCRIPT_SCHEDULE_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            match update_script(payload) {
+                Ok(script) => {
+                    match s.emit(
+                        SCRIPT_SCHEDULE_REMOVED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting remove script schedule event: {:?}", e);
+                        }
+                    }
+
+                    match s.broadcast().emit(
+                        SCRIPT_SCHEDULE_REMOVED_EVENT,
+                        json!({
+                            "script": script,
+                        }),
+                    ) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error emitting remove script schedule event broadcast: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    match send_message_to_dashboard(&s, format!("Error updating script: {:?}", e).to_string(), DashboardMessageType::Error) {
                         Ok(_) => {}
                         Err(e) => {
                             println!("Error sending message to dashboard: {:?}", e);
