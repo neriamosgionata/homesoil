@@ -32,18 +32,22 @@ const COMMAND_MODULO_VARIABLE: Command = "MODULO";
 
 const COMMAND_DELAY: Command = "DELAY";
 
-const COMMAND_BREAK: Command = "BREAK";
-const COMMAND_CONTINUE: Command = "CONTINUE";
 
 
 type Instruction = &'static str;
 
-const INSTRUCTION_BLOCK_START: Instruction = "THEN";
-const INSTRUCTION_BLOCK_END: Instruction = "END";
-
 const INSTRUCTION_IF: Instruction = "IF";
 const INSTRUCTION_LOOP: Instruction = "LOOP";
 const INSTRUCTION_WHILE_LOOP: Instruction = "WHILE";
+
+
+const INSTRUCTION_BREAK: Instruction = "BREAK";
+const INSTRUCTION_CONTINUE: Instruction = "CONTINUE";
+
+
+const INSTRUCTION_BLOCK_START: Instruction = "THEN";
+const INSTRUCTION_BLOCK_END: Instruction = "END";
+
 
 const MAIN_BLOCK_START: Instruction = "RUN";
 const MAIN_BLOCK_END: Instruction = "STOP";
@@ -505,12 +509,6 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             CommandFunctionResult::Continue
         }),
-        COMMAND_BREAK => Box::new(|_args, _variables, _socket| {
-            CommandFunctionResult::Break
-        }),
-        COMMAND_CONTINUE => Box::new(|_args, _variables, _socket| {
-            CommandFunctionResult::Continue
-        }),
         _ => Box::new(|_args, _variables, _socket| {
             CommandFunctionResult::Error("Unknown command".to_string())
         }),
@@ -590,6 +588,12 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
                 }
             }
 
+            CommandFunctionResult::Continue
+        }),
+        INSTRUCTION_BREAK => Box::new(|_args, _inner_executions, _variables, _socket| {
+            CommandFunctionResult::Break
+        }),
+        INSTRUCTION_CONTINUE => Box::new(|_args, _inner_executions, _variables, _socket| {
             CommandFunctionResult::Continue
         }),
         _ => {
@@ -693,6 +697,8 @@ fn parse_instruction(s: String) -> Result<(Instruction, Option<Args>)> {
         INSTRUCTION_IF => INSTRUCTION_IF,
         INSTRUCTION_LOOP => INSTRUCTION_LOOP,
         INSTRUCTION_WHILE_LOOP => INSTRUCTION_WHILE_LOOP,
+        INSTRUCTION_BREAK => INSTRUCTION_BREAK,
+        INSTRUCTION_CONTINUE => INSTRUCTION_CONTINUE,
         _ => {
             return Err(anyhow!("Unknown instruction: {}", instruction.unwrap()));
         }
@@ -722,8 +728,6 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
         COMMAND_SUBTRACT_FROM_VARIABLE => COMMAND_SUBTRACT_FROM_VARIABLE,
         COMMAND_MULTIPLY_VARIABLE => COMMAND_MULTIPLY_VARIABLE,
         COMMAND_DIVIDE_VARIABLE => COMMAND_DIVIDE_VARIABLE,
-        COMMAND_BREAK => COMMAND_BREAK,
-        COMMAND_CONTINUE => COMMAND_CONTINUE,
         _ => {
             return Err(anyhow!("Unknown command: {}", s));
         }
