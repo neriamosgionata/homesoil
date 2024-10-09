@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::thread::{JoinHandle, spawn};
 use std::time::Duration;
 use crate::handlers::path_handler;
@@ -152,8 +153,8 @@ pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
 }
 
 pub async fn run_coap_server(address: &String, socket: &SocketIo) {
-    let boxed_socket = Box::new(socket.clone());
-    let boxed_address = Box::new(address.clone());
+    let boxed_socket = Arc::new(socket.clone());
+    let boxed_address = Arc::new(address.clone());
 
     spawn(move || {
         println!("Starting CoAP server on {}", boxed_address.as_str());

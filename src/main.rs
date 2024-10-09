@@ -24,8 +24,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         current_ip_address = "127.0.0.1".to_string();
     }
 
-    let current_ip_address_socket_io = format!("{}:4000", current_ip_address);
-    let current_ip_address_coap = format!("{}:5683", current_ip_address);
+    let socket_port = std::env::var("SOCKET_PORT").unwrap_or("4000".to_string());
+    let coap_port = std::env::var("COAP_PORT").unwrap_or("8683".to_string());
+
+    let current_ip_address_socket_io = format!("{}:{}", current_ip_address, socket_port);
+    let current_ip_address_coap = format!("{}:{}", current_ip_address, coap_port);
 
     let io = run_socket_server(&current_ip_address_socket_io).await?;
 
