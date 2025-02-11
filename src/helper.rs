@@ -1,7 +1,7 @@
-use serde_json::json;
-use socketioxide::SendError;
-use socketioxide::extract::SocketRef;
 use crate::events::MESSAGE_SENT_EVENT;
+use serde_json::json;
+use socketioxide::extract::SocketRef;
+use socketioxide::SendError;
 
 pub enum DashboardMessageType {
     Info,
@@ -21,12 +21,17 @@ impl DashboardMessageType {
     }
 }
 
-pub fn send_message_to_dashboard(socket: &SocketRef, message: String, message_type: DashboardMessageType) -> Result<(), SendError> {
+pub fn send_message_to_dashboard(
+    socket: &SocketRef,
+    message: String,
+    message_type: DashboardMessageType,
+) -> Result<(), SendError> {
     socket.emit(
         MESSAGE_SENT_EVENT,
         json!({
-                "message": message,
-                "type": message_type.get_class(),
-            }),
+            "message": message,
+            "type": message_type.get_class(),
+        }),
     )
 }
+

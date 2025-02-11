@@ -1,19 +1,19 @@
-use std::collections::HashMap;
-use regex::Regex;
-use anyhow::{anyhow, Error, Result};
-use socketioxide::extract::SocketRef;
 use crate::actuator_handlers::send_message_to_actuator;
 use crate::condition_parser::parse_condition;
 use crate::helper::{send_message_to_dashboard, DashboardMessageType};
 use crate::script_methods::get_script;
 use crate::sensor_handlers::send_message_to_sensor;
+use anyhow::{anyhow, Error, Result};
+use regex::Regex;
+use socketioxide::extract::SocketRef;
+use std::collections::HashMap;
 
 type Command = &'static str;
 
 #[cfg(windows)]
-const COMMAND_END: &'static str = "\r\n";
+const COMMAND_END: &str = "\r\n";
 #[cfg(not(windows))]
-const COMMAND_END: &'static str = "\n";
+const COMMAND_END: &str = "\n";
 
 const COMMAND_ACTIVATE_ACTUATOR: Command = "ACTIVATE";
 const COMMAND_DEACTIVATE_ACTUATOR: Command = "DEACTIVATE";
@@ -32,28 +32,26 @@ const COMMAND_MODULO_VARIABLE: Command = "MODULO";
 
 const COMMAND_DELAY: Command = "DELAY";
 
-
-
 type Instruction = &'static str;
 
 const INSTRUCTION_IF: Instruction = "IF";
 const INSTRUCTION_LOOP: Instruction = "LOOP";
 const INSTRUCTION_WHILE_LOOP: Instruction = "WHILE";
 
-
 const INSTRUCTION_BREAK: Instruction = "BREAK";
 const INSTRUCTION_CONTINUE: Instruction = "CONTINUE";
-
 
 const INSTRUCTION_BLOCK_START: Instruction = "THEN";
 const INSTRUCTION_BLOCK_END: Instruction = "END";
 
-
 const MAIN_BLOCK_START: Instruction = "RUN";
 const MAIN_BLOCK_END: Instruction = "STOP";
 
-
-fn operation_to_numeric_variable_value(variable: &Value, value: f64, operation: Command) -> Result<f64> {
+fn operation_to_numeric_variable_value(
+    variable: &Value,
+    value: f64,
+    operation: Command,
+) -> Result<f64> {
     if operation == COMMAND_ADD_TO_VARIABLE {
         let v = match variable {
             Value::Int32(s) => *s as f64 - value,
@@ -119,7 +117,11 @@ fn operation_to_numeric_variable_value(variable: &Value, value: f64, operation: 
     }
 }
 
-fn change_numeric_variable_value(args: &Args, variables: &Variables, operation: Command) -> Result<(String, f64)> {
+fn change_numeric_variable_value(
+    args: &Args,
+    variables: &Variables,
+    operation: Command,
+) -> Result<(String, f64)> {
     let variable_name = match args.get(0).unwrap() {
         Value::Variable(s) => s,
         _ => {
@@ -132,24 +134,20 @@ fn change_numeric_variable_value(args: &Args, variables: &Variables, operation: 
         Value::Int64(s) => *s as f64,
         Value::Float32(s) => *s as f64,
         Value::Float64(s) => *s,
-        Value::Variable(s) => {
-            match variables.get(s) {
-                Some(variable) => {
-                    match variable {
-                        Value::Int32(s) => *s as f64,
-                        Value::Int64(s) => *s as f64,
-                        Value::Float32(s) => *s as f64,
-                        Value::Float64(s) => *s,
-                        _ => {
-                            return Err(Error::msg("Invalid variable value".to_string()));
-                        }
-                    }
+        Value::Variable(s) => match variables.get(s) {
+            Some(variable) => match variable {
+                Value::Int32(s) => *s as f64,
+                Value::Int64(s) => *s as f64,
+                Value::Float32(s) => *s as f64,
+                Value::Float64(s) => *s,
+                _ => {
+                    return Err(Error::msg("Invalid variable value".to_string()));
                 }
-                None => {
-                    return Err(Error::msg("Variable not found".to_string()));
-                }
+            },
+            None => {
+                return Err(Error::msg("Variable not found".to_string()));
             }
-        }
+        },
         _ => {
             return Err(Error::msg("Invalid variable value".to_string()));
         }
@@ -168,11 +166,8 @@ fn change_numeric_variable_value(args: &Args, variables: &Variables, operation: 
 }
 
 fn save_variable(res: CommandFunctionResult, variables: &mut Variables) {
-    match res {
-        CommandFunctionResult::SaveVariable(variable_name, variable_value) => {
-            variables.insert(variable_name, variable_value);
-        }
-        _ => {}
+    if let CommandFunctionResult::SaveVariable(variable_name, variable_value) = res {
+        variables.insert(variable_name, variable_value);
     }
 }
 
@@ -191,7 +186,7 @@ fn compute_message_with_variables(message: String, variables: &Variables) -> Str
             }
         };
 
-        final_string = String::from(final_string.replace(variable_name, variable_value.as_str()));
+        final_string = final_string.replace(variable_name, variable_value.as_str());
     }
 
     final_string
@@ -216,16 +211,9 @@ fn parse_command_function(command: Command) -> CommandFunction {
                 }
             };
 
-            match send_message_to_actuator(
-                actuator_id,
-                &"ON".to_string(),
-            ) {
-                Ok(res) => {
-                    CommandFunctionResult::Return(Value::String(res))
-                }
-                Err(e) => {
-                    CommandFunctionResult::Error(e.to_string())
-                }
+            match send_message_to_actuator(actuator_id, &"ON".to_string()) {
+                Ok(res) => CommandFunctionResult::Return(Value::String(res)),
+                Err(e) => CommandFunctionResult::Error(e.to_string()),
             }
         }),
         COMMAND_DEACTIVATE_ACTUATOR => Box::new(|args, _variables, _socket| {
@@ -245,16 +233,9 @@ fn parse_command_function(command: Command) -> CommandFunction {
                 }
             };
 
-            match send_message_to_actuator(
-                actuator_id,
-                &"OFF".to_string(),
-            ) {
-                Ok(res) => {
-                    CommandFunctionResult::Return(Value::String(res))
-                }
-                Err(e) => {
-                    CommandFunctionResult::Error(e.to_string())
-                }
+            match send_message_to_actuator(actuator_id, &"OFF".to_string()) {
+                Ok(res) => CommandFunctionResult::Return(Value::String(res)),
+                Err(e) => CommandFunctionResult::Error(e.to_string()),
             }
         }),
         COMMAND_PULSE_ACTUATOR => Box::new(|args, _variables, _socket| {
@@ -274,16 +255,9 @@ fn parse_command_function(command: Command) -> CommandFunction {
                 }
             };
 
-            match send_message_to_actuator(
-                actuator_id,
-                &"ON-PULSE".to_string(),
-            ) {
-                Ok(res) => {
-                    CommandFunctionResult::Return(Value::String(res))
-                }
-                Err(e) => {
-                    CommandFunctionResult::Error(e.to_string())
-                }
+            match send_message_to_actuator(actuator_id, &"ON-PULSE".to_string()) {
+                Ok(res) => CommandFunctionResult::Return(Value::String(res)),
+                Err(e) => CommandFunctionResult::Error(e.to_string()),
             }
         }),
         COMMAND_READ_SENSOR => Box::new(|args, _variables, _socket| {
@@ -303,16 +277,12 @@ fn parse_command_function(command: Command) -> CommandFunction {
                 }
             };
 
-            match send_message_to_sensor(
-                sensor_id,
-                &"READ".to_string(),
-            ) {
-                Ok(res) => {
-                    CommandFunctionResult::SaveVariable("$sensor_id_".to_string() + sensor_id.to_string().as_str(), Value::String(res))
-                }
-                Err(e) => {
-                    CommandFunctionResult::Error(e.to_string())
-                }
+            match send_message_to_sensor(sensor_id, &"READ".to_string()) {
+                Ok(res) => CommandFunctionResult::SaveVariable(
+                    "$sensor_id_".to_string() + sensor_id.to_string().as_str(),
+                    Value::String(res),
+                ),
+                Err(e) => CommandFunctionResult::Error(e.to_string()),
             }
         }),
         COMMAND_SET_VARIABLE => Box::new(|args, _variables, _socket| {
@@ -370,14 +340,18 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let (variable_name, variable_value) = match change_numeric_variable_value(&args, variables, COMMAND_ADD_TO_VARIABLE) {
-                Ok(res) => res,
-                Err(e) => {
-                    return CommandFunctionResult::Error(e.to_string());
-                }
-            };
+            let (variable_name, variable_value) =
+                match change_numeric_variable_value(&args, variables, COMMAND_ADD_TO_VARIABLE) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return CommandFunctionResult::Error(e.to_string());
+                    }
+                };
 
-            CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::Float64(variable_value))
+            CommandFunctionResult::SaveVariable(
+                variable_name.to_string(),
+                Value::Float64(variable_value),
+            )
         }),
         COMMAND_SUBTRACT_FROM_VARIABLE => Box::new(|args, variables, _socket| {
             println!("Subtract from variable: {:?}", args);
@@ -391,14 +365,21 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let (variable_name, variable_value) = match change_numeric_variable_value(&args, variables, COMMAND_SUBTRACT_FROM_VARIABLE) {
+            let (variable_name, variable_value) = match change_numeric_variable_value(
+                &args,
+                variables,
+                COMMAND_SUBTRACT_FROM_VARIABLE,
+            ) {
                 Ok(res) => res,
                 Err(e) => {
                     return CommandFunctionResult::Error(e.to_string());
                 }
             };
 
-            CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::Float64(variable_value))
+            CommandFunctionResult::SaveVariable(
+                variable_name.to_string(),
+                Value::Float64(variable_value),
+            )
         }),
         COMMAND_MULTIPLY_VARIABLE => Box::new(|args, variables, _socket| {
             println!("Multiply variable: {:?}", args);
@@ -412,14 +393,18 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let (variable_name, variable_value) = match change_numeric_variable_value(&args, variables, COMMAND_MULTIPLY_VARIABLE) {
-                Ok(res) => res,
-                Err(e) => {
-                    return CommandFunctionResult::Error(e.to_string());
-                }
-            };
+            let (variable_name, variable_value) =
+                match change_numeric_variable_value(&args, variables, COMMAND_MULTIPLY_VARIABLE) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return CommandFunctionResult::Error(e.to_string());
+                    }
+                };
 
-            CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::Float64(variable_value))
+            CommandFunctionResult::SaveVariable(
+                variable_name.to_string(),
+                Value::Float64(variable_value),
+            )
         }),
         COMMAND_DIVIDE_VARIABLE => Box::new(|args, variables, _socket| {
             println!("Divide variable: {:?}", args);
@@ -433,14 +418,18 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let (variable_name, variable_value) = match change_numeric_variable_value(&args, variables, COMMAND_DIVIDE_VARIABLE) {
-                Ok(res) => res,
-                Err(e) => {
-                    return CommandFunctionResult::Error(e.to_string());
-                }
-            };
+            let (variable_name, variable_value) =
+                match change_numeric_variable_value(&args, variables, COMMAND_DIVIDE_VARIABLE) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return CommandFunctionResult::Error(e.to_string());
+                    }
+                };
 
-            CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::Float64(variable_value))
+            CommandFunctionResult::SaveVariable(
+                variable_name.to_string(),
+                Value::Float64(variable_value),
+            )
         }),
         COMMAND_MODULO_VARIABLE => Box::new(|args, variables, _socket| {
             println!("Modulo variable: {:?}", args);
@@ -454,14 +443,18 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let (variable_name, variable_value) = match change_numeric_variable_value(&args, variables, COMMAND_MODULO_VARIABLE) {
-                Ok(res) => res,
-                Err(e) => {
-                    return CommandFunctionResult::Error(e.to_string());
-                }
-            };
+            let (variable_name, variable_value) =
+                match change_numeric_variable_value(&args, variables, COMMAND_MODULO_VARIABLE) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return CommandFunctionResult::Error(e.to_string());
+                    }
+                };
 
-            CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::Float64(variable_value))
+            CommandFunctionResult::SaveVariable(
+                variable_name.to_string(),
+                Value::Float64(variable_value),
+            )
         }),
         COMMAND_SEND_MESSAGE_TO_DASHBOARD => Box::new(|args, variables, socket| {
             match args_required(args, 1) {
@@ -590,9 +583,9 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
 
             CommandFunctionResult::Continue
         }),
-        INSTRUCTION_BREAK => Box::new(|_args, _inner_executions, _variables, _socket| {
-            CommandFunctionResult::Break
-        }),
+        INSTRUCTION_BREAK => {
+            Box::new(|_args, _inner_executions, _variables, _socket| CommandFunctionResult::Break)
+        }
         INSTRUCTION_CONTINUE => Box::new(|_args, _inner_executions, _variables, _socket| {
             CommandFunctionResult::Continue
         }),
@@ -607,16 +600,20 @@ fn args_required(args: &Option<Args>, number_of_args: isize) -> Result<()> {
         return Err(anyhow!("Arguments required"));
     }
 
-    if number_of_args != -1i8 as isize {
-        if args.clone().unwrap().len() != number_of_args.abs() as usize {
-            return Err(anyhow!("Invalid number of arguments"));
-        }
+    if number_of_args != -1i8 as isize
+        && args.clone().unwrap().len() != number_of_args.abs() as usize
+    {
+        return Err(anyhow!("Invalid number of arguments"));
     }
 
     Ok(())
 }
 
-fn run_inner_executions(inner_executions: &Vec<ScriptExecution>, variables: &mut Variables, socket: &SocketRef) -> CommandFunctionResult {
+fn run_inner_executions(
+    inner_executions: &Vec<ScriptExecution>,
+    variables: &mut Variables,
+    socket: &SocketRef,
+) -> CommandFunctionResult {
     for execution in inner_executions {
         match execution {
             ScriptExecution::Command(command) => {
@@ -665,7 +662,6 @@ fn run_inner_executions(inner_executions: &Vec<ScriptExecution>, variables: &mut
     CommandFunctionResult::Continue
 }
 
-
 fn parse_argument(s: String) -> Value {
     if "true" == s {
         Value::Boolean(true)
@@ -677,10 +673,9 @@ fn parse_argument(s: String) -> Value {
         Value::Variable(s)
     } else if (s.starts_with("[") && s.ends_with("]")) || (s.starts_with("{") && s.ends_with("}")) {
         Value::Array(
-            s
-                .split(",")
+            s.split(",")
                 .map(|arg| parse_argument(arg.to_string()))
-                .collect::<Vec<Value>>()
+                .collect::<Vec<Value>>(),
         )
     } else {
         Value::Int32(s.parse::<i32>().unwrap())
@@ -691,7 +686,9 @@ fn parse_instruction(s: String) -> Result<(Instruction, Option<Args>)> {
     let mut fragments = s.split_whitespace();
 
     let instruction = fragments.next();
-    let arguments = fragments.map(|arg| parse_argument(arg.to_string())).collect::<Vec<Value>>();
+    let arguments = fragments
+        .map(|arg| parse_argument(arg.to_string()))
+        .collect::<Vec<Value>>();
 
     let i = match instruction.unwrap() {
         INSTRUCTION_IF => INSTRUCTION_IF,
@@ -706,7 +703,11 @@ fn parse_instruction(s: String) -> Result<(Instruction, Option<Args>)> {
 
     Ok((
         i,
-        if arguments.len() > 0 { Some(arguments) } else { None },
+        if !arguments.is_empty() {
+            Some(arguments)
+        } else {
+            None
+        },
     ))
 }
 
@@ -714,7 +715,9 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
     let mut fragments = s.split_whitespace();
 
     let command = fragments.next();
-    let arguments = fragments.map(|arg| parse_argument(arg.to_string())).collect::<Vec<Value>>();
+    let arguments = fragments
+        .map(|arg| parse_argument(arg.to_string()))
+        .collect::<Vec<Value>>();
 
     let c = match command.unwrap() {
         COMMAND_ACTIVATE_ACTUATOR => COMMAND_ACTIVATE_ACTUATOR,
@@ -735,7 +738,11 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
 
     Ok((
         c,
-        if arguments.len() > 0 { Some(arguments) } else { None },
+        if !arguments.is_empty() {
+            Some(arguments)
+        } else {
+            None
+        },
     ))
 }
 
@@ -767,9 +774,9 @@ impl Value {
                 let mut s = "[".to_string();
                 for value in array {
                     s.push_str(value.to_string(variables).as_str());
-                    s.push_str(", ");
+                    s += ", "
                 }
-                s.push_str("]");
+                s += "]";
                 s
             }
         }
@@ -780,8 +787,16 @@ pub type Args = Vec<Value>;
 
 pub type Variables = HashMap<String, Value>;
 
-type CommandFunction = Box<dyn Fn(&Option<Args>, &mut Variables, &SocketRef) -> CommandFunctionResult>;
-type InstructionFunction = Box<dyn Fn(&Option<Args>, &Vec<ScriptExecution>, &mut Variables, &SocketRef) -> CommandFunctionResult>;
+type CommandFunction =
+    Box<dyn Fn(&Option<Args>, &mut Variables, &SocketRef) -> CommandFunctionResult>;
+type InstructionFunction = Box<
+    dyn Fn(
+        &Option<Args>,
+        &Vec<ScriptExecution>,
+        &mut Variables,
+        &SocketRef,
+    ) -> CommandFunctionResult,
+>;
 
 pub enum CommandFunctionResult {
     Error(String),
@@ -793,31 +808,19 @@ pub enum CommandFunctionResult {
 
 impl CommandFunctionResult {
     fn is_save_variable(&self) -> bool {
-        match self {
-            CommandFunctionResult::SaveVariable(_, _) => true,
-            _ => false,
-        }
+        matches!(self, CommandFunctionResult::SaveVariable(_, _))
     }
 
     fn is_error(&self) -> bool {
-        match self {
-            CommandFunctionResult::Error(_) => true,
-            _ => false,
-        }
+        matches!(self, CommandFunctionResult::Error(_))
     }
 
     fn is_return(&self) -> bool {
-        match self {
-            CommandFunctionResult::Return(_) => true,
-            _ => false,
-        }
+        matches!(self, CommandFunctionResult::Return(_))
     }
 
     fn is_break(&self) -> bool {
-        match self {
-            CommandFunctionResult::Break => true,
-            _ => false,
-        }
+        matches!(self, CommandFunctionResult::Break)
     }
 }
 
@@ -828,13 +831,14 @@ struct ScriptCommand {
 
 impl ScriptCommand {
     fn new(fragment: String) -> Result<ScriptCommand> {
-        let (
-            command,
-            arguments,
-        ) = parse_command(fragment)?;
+        let (command, arguments) = parse_command(fragment)?;
 
         Ok(ScriptCommand {
-            arguments: if arguments.clone().unwrap().len() > 0 { Some(arguments.clone().unwrap()) } else { None },
+            arguments: if !arguments.clone().unwrap().is_empty() {
+                Some(arguments.clone().unwrap())
+            } else {
+                None
+            },
             function: parse_command_function(command),
         })
     }
@@ -863,10 +867,7 @@ impl ScriptBlock {
         instruction_fragment: String,
         inner_executions: Vec<ScriptExecution>,
     ) -> Result<ScriptBlock> {
-        let (
-            instruction,
-            arguments,
-        ) = parse_instruction(instruction_fragment)?;
+        let (instruction, arguments) = parse_instruction(instruction_fragment)?;
 
         Ok(ScriptBlock {
             arguments,
@@ -888,7 +889,12 @@ impl ScriptBlock {
     }
 
     fn execute(&self, variables: &mut Variables, socket: &SocketRef) -> CommandFunctionResult {
-        self.get_function()(self.get_arguments(), self.get_inner_executions(), variables, socket)
+        self.get_function()(
+            self.get_arguments(),
+            self.get_inner_executions(),
+            variables,
+            socket,
+        )
     }
 }
 
@@ -899,7 +905,9 @@ enum ScriptExecution {
 
 fn remove_tabs_and_multiple_whitespace(s: String) -> String {
     let regex = Regex::new(r"\s+").unwrap();
-    regex.replace_all(s.replace("\t", " ").as_str(), " ").to_string()
+    regex
+        .replace_all(s.replace("\t", " ").as_str(), " ")
+        .to_string()
 }
 
 fn parse_commands(fragment: String) -> Result<Vec<ScriptExecution>> {
@@ -927,7 +935,9 @@ fn parse_block(fragment: String) -> Result<Vec<ScriptExecution>> {
     let start_index = fragment.find(INSTRUCTION_BLOCK_START).unwrap();
     let end_index = fragment.rfind(INSTRUCTION_BLOCK_END).unwrap();
 
-    let inner_executions = parse_execution_step(fragment[start_index + INSTRUCTION_BLOCK_START.len()..end_index].to_string());
+    let inner_executions = parse_execution_step(
+        fragment[start_index + INSTRUCTION_BLOCK_START.len()..end_index].to_string(),
+    );
 
     let inner_executions = match inner_executions {
         Ok(res) => res,
@@ -936,10 +946,7 @@ fn parse_block(fragment: String) -> Result<Vec<ScriptExecution>> {
         }
     };
 
-    let s = ScriptBlock::new(
-        fragment[0..start_index].to_string(),
-        inner_executions,
-    );
+    let s = ScriptBlock::new(fragment[0..start_index].to_string(), inner_executions);
 
     let s = match s {
         Ok(res) => res,
@@ -948,19 +955,15 @@ fn parse_block(fragment: String) -> Result<Vec<ScriptExecution>> {
         }
     };
 
-    Ok(vec![
-        ScriptExecution::Block(
-            s
-        )
-    ])
+    Ok(vec![ScriptExecution::Block(s)])
 }
 
 fn parse_execution_step(fragment: String) -> Result<Vec<ScriptExecution>> {
     if fragment.contains(INSTRUCTION_BLOCK_START) && fragment.contains(INSTRUCTION_BLOCK_END) {
-        return Ok(parse_block(fragment)?);
+        return Ok(parse_block(fragment).unwrap());
     }
 
-    Ok(parse_commands(fragment)?)
+    Ok(parse_commands(fragment).unwrap())
 }
 
 pub struct Script {
@@ -985,19 +988,18 @@ impl Script {
 
         let minified_script = remove_tabs_and_multiple_whitespace(script);
 
-        let main_block = minified_script.replace(MAIN_BLOCK_START, "")
+        let main_block = minified_script
+            .replace(MAIN_BLOCK_START, "")
             .replace(MAIN_BLOCK_END, "")
             .trim()
             .to_string();
 
         let executions = parse_execution_step(main_block)?;
 
-        Ok(
-            Script {
-                id: script_id,
-                executions,
-            }
-        )
+        Ok(Script {
+            id: script_id,
+            executions,
+        })
     }
 
     pub fn get_id(&self) -> i32 {
@@ -1021,3 +1023,4 @@ impl Script {
         Ok(CommandFunctionResult::Return(Value::None))
     }
 }
+

@@ -1,10 +1,12 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::thread::{JoinHandle, spawn};
-use std::time::Duration;
+use crate::actuator_handlers::ping_actuator;
+use crate::actuator_methods::get_all_registered_actuators;
+use crate::events::{
+    register_all_callbacks, ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT,
+};
 use crate::handlers::path_handler;
+use crate::sensor_handlers::ping_sensor;
+use crate::sensor_methods::{get_all_last_sensor_readings, get_all_registered_sensors};
 use crate::Server;
-use socketioxide::{SocketIo, TransportType};
 use anyhow::Result;
 use axum::routing::get;
 use axum::Router;
@@ -13,12 +15,12 @@ use axum_util::cors::CorsLayer;
 use serde::Deserialize;
 use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
+use socketioxide::{SocketIo, TransportType};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::thread::{spawn, JoinHandle};
+use std::time::Duration;
 use tokio::runtime::Runtime;
-use crate::actuator_handlers::ping_actuator;
-use crate::actuator_methods::get_all_registered_actuators;
-use crate::sensor_methods::{get_all_registered_sensors, get_all_last_sensor_readings};
-use crate::events::{ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT, register_all_callbacks};
-use crate::sensor_handlers::ping_sensor;
 
 #[derive(Debug, Deserialize)]
 struct AuthData {
@@ -49,49 +51,31 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
             println!("Socket disconnected : {:?}", socket.id);
         });
 
-        match get_all_registered_sensors() {
-            Ok(sensors) => {
-                match socket.emit(
-                    ALL_SENSORS_EVENT,
-                    json!({
-                            "sensors": sensors,
-                        }),
-                ) {
-                    Ok(_) => {}
-                    Err(_) => {}
-                }
-            }
-            Err(_) => {}
+        if let Ok(sensors) = get_all_registered_sensors() {
+            let _: Result<_, _> = socket.emit(
+                ALL_SENSORS_EVENT,
+                json!({
+                    "sensors": sensors,
+                }),
+            );
         }
 
-        match get_all_last_sensor_readings() {
-            Ok(sensor_reads) => {
-                match socket.emit(
-                    ALL_LAST_SENSOR_READINGS_EVENT,
-                    json!({
-                            "sensor_reads": sensor_reads,
-                        }),
-                ) {
-                    Ok(_) => {}
-                    Err(_) => {}
-                }
-            }
-            Err(_) => {}
+        if let Ok(sensor_reads) = get_all_last_sensor_readings() {
+            let _: Result<_, _> = socket.emit(
+                ALL_LAST_SENSOR_READINGS_EVENT,
+                json!({
+                    "sensor_reads": sensor_reads,
+                }),
+            );
         }
 
-        match get_all_registered_actuators() {
-            Ok(actuators) => {
-                match socket.emit(
-                    ALL_ACTUATORS_EVENT,
-                    json!({
-                            "actuators": actuators,
-                        }),
-                ) {
-                    Ok(_) => {}
-                    Err(_) => {}
-                }
-            }
-            Err(_) => {}
+        if let Ok(actuators) = get_all_registered_actuators() {
+            let _: Result<_, _> = socket.emit(
+                ALL_ACTUATORS_EVENT,
+                json!({
+                    "actuators": actuators,
+                }),
+            );
         }
     });
 
@@ -108,10 +92,15 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
                     .layer(layer)
                     .layer(CorsLayer);
 
-                AxumServer::bind(&boxed_address.as_str().parse::<SocketAddr>().expect("Failed to parse SocketIO server address"))
-                    .serve(app.into_make_service())
-                    .await
-                    .unwrap();
+                AxumServer::bind(
+                    &boxed_address
+                        .as_str()
+                        .parse::<SocketAddr>()
+                        .expect("Failed to parse SocketIO server address"),
+                )
+                .serve(app.into_make_service())
+                .await
+                .unwrap();
 
                 println!("SocketIO server stopped");
             });
@@ -123,32 +112,20 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
 pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
     let boxed_socket = Box::new(socket.clone());
 
-    spawn(move || {
-        loop {
-            match get_all_registered_sensors() {
-                Ok(sensors) => {
-                    sensors
-                        .iter()
-                        .for_each(|sensor| {
-                            ping_sensor(sensor, boxed_socket.as_ref());
-                        });
-                }
-                Err(_) => {}
-            }
-
-            match get_all_registered_actuators() {
-                Ok(actuators) => {
-                    actuators
-                        .iter()
-                        .for_each(|actuator| {
-                            ping_actuator(actuator, boxed_socket.as_ref());
-                        });
-                }
-                Err(_) => {}
-            }
-
-            std::thread::sleep(Duration::from_secs(5));
+    spawn(move || loop {
+        if let Ok(sensors) = get_all_registered_sensors() {
+            sensors.iter().for_each(|sensor| {
+                ping_sensor(sensor, boxed_socket.as_ref());
+            });
         }
+
+        if let Ok(actuators) = get_all_registered_actuators() {
+            actuators.iter().for_each(|actuator| {
+                ping_actuator(actuator, boxed_socket.as_ref());
+            });
+        }
+
+        std::thread::sleep(Duration::from_secs(5));
     })
 }
 
@@ -164,11 +141,11 @@ pub async fn run_coap_server(address: &String, socket: &SocketIo) {
             .block_on(async {
                 let mut server = Server::new(boxed_address.as_str()).unwrap();
 
-                server.run(
-                    |request| async {
+                server
+                    .run(|request| async {
                         let request_ref = &request;
 
-                        let payload = path_handler(boxed_socket.as_ref(), &request_ref).await;
+                        let payload = path_handler(boxed_socket.as_ref(), request_ref).await;
 
                         match request.response {
                             Some(mut message) => {
@@ -182,10 +159,9 @@ pub async fn run_coap_server(address: &String, socket: &SocketIo) {
                                 }
                                 Some(message)
                             }
-                            _ => None
+                            _ => None,
                         }
-                    },
-                )
+                    })
                     .await
                     .expect("Failed to create server");
             });
@@ -193,14 +169,10 @@ pub async fn run_coap_server(address: &String, socket: &SocketIo) {
 }
 
 pub async fn check_for_old_sensor_reads_records() {
-    spawn(move || {
-        loop {
-            match crate::sensor_methods::delete_old_sensor_reads_records() {
-                Ok(_) => {}
-                Err(_) => {}
-            }
+    spawn(move || loop {
+        let _: Result<_, _> = crate::sensor_methods::delete_old_sensor_reads_records();
 
-            std::thread::sleep(Duration::from_secs(3600));
-        }
+        std::thread::sleep(Duration::from_secs(3600));
     });
 }
+

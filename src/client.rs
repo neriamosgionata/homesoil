@@ -172,13 +172,12 @@ impl CoAPClient {
         if let Some(d) = domain {
             request
                 .message
-                .add_option(CoapOption::UriHost, d.as_str().as_bytes().to_vec());
+                .add_option(CoapOption::UriHost, d.as_bytes().to_vec());
         }
         request.message.header.message_id = Self::gen_message_id(&mut self.message_id);
 
-        match data {
-            Some(data) => request.message.payload = data,
-            None => (),
+        if let Some(d) = data {
+            request.message.payload = d;
         }
 
         self.set_receive_timeout(Some(timeout))?;
@@ -230,7 +229,7 @@ impl CoAPClient {
             Ok(good_socket) => socket = good_socket,
             Err(_) => return Err(Error::new(ErrorKind::Other, "network error")),
         }
-        let peer_addr = self.peer_addr.clone();
+        let peer_addr = self.peer_addr;
         let (observe_sender, observe_receiver) = mpsc::channel();
         let observe_path = String::from(resource_path);
 
@@ -282,18 +281,15 @@ impl CoAPClient {
         self.observe_sender = Some(observe_sender);
         self.observe_thread = Some(observe_thread);
 
-        return Ok(());
+        Ok(())
     }
 
     /// Stop observing
     pub fn unobserve(&mut self) {
-        match self.observe_sender.take() {
-            Some(ref sender) => {
-                sender.send(ObserveMessage::Terminate).unwrap();
+        if let Some(ref sender) = self.observe_sender.take() {
+            sender.send(ObserveMessage::Terminate).unwrap();
 
-                self.observe_thread.take().map(|g| g.join().unwrap());
-            }
-            _ => {}
+            self.observe_thread.take().map(|g| g.join().unwrap());
         }
     }
 
@@ -479,24 +475,21 @@ impl CoAPClient {
         };
         let host = Regex::new(r"^\[(.*?)]$")
             .unwrap()
-            .replace(&host, "$1")
+            .replace(host, "$1")
             .to_string();
 
-        let port = match url_params.port() {
-            Some(p) => p,
-            None => 5683,
-        };
+        let port = url_params.port().unwrap_or(5683);
 
         let path = url_params.path().to_string();
 
         let queries = url_params.query().map(|q| q.as_bytes().to_vec());
 
-        return Ok((host.to_string(), port, path, queries));
+        Ok((host.to_string(), port, path, queries))
     }
 
     fn gen_message_id(message_id: &mut u16) -> u16 {
         (*message_id) += 1;
-        return *message_id;
+        *message_id
     }
 
     fn intercept_response(

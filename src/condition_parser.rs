@@ -1,7 +1,7 @@
 type Operator = &'static str;
 
-use anyhow::{anyhow, Result};
 use crate::script_parser::{Args, Value, Variables};
+use anyhow::{anyhow, Result};
 
 const PARENTHESIS_OPEN: Operator = "(";
 const PARENTHESIS_CLOSE: Operator = ")";
@@ -31,22 +31,18 @@ const OPERATORS: [Operator; 8] = [
 
 fn match_operator(operator: &Value) -> Result<Operator> {
     match operator {
-        Value::String(other_equal) => {
-            match other_equal.as_str() {
-                EQUAL => Ok(EQUAL),
-                NOT_EQUAL => Ok(NOT_EQUAL),
-                LESS => Ok(LESS),
-                LESS_OR_EQUAL => Ok(LESS_OR_EQUAL),
-                GREATER => Ok(GREATER),
-                GREATER_OR_EQUAL => Ok(GREATER_OR_EQUAL),
-                IN => Ok(IN),
-                NOT_IN => Ok(NOT_IN),
-                _ => Err(anyhow!("Invalid operator")),
-            }
-        }
-        _ => {
-            Err(anyhow!("Invalid operator"))
-        }
+        Value::String(other_equal) => match other_equal.as_str() {
+            EQUAL => Ok(EQUAL),
+            NOT_EQUAL => Ok(NOT_EQUAL),
+            LESS => Ok(LESS),
+            LESS_OR_EQUAL => Ok(LESS_OR_EQUAL),
+            GREATER => Ok(GREATER),
+            GREATER_OR_EQUAL => Ok(GREATER_OR_EQUAL),
+            IN => Ok(IN),
+            NOT_IN => Ok(NOT_IN),
+            _ => Err(anyhow!("Invalid operator")),
+        },
+        _ => Err(anyhow!("Invalid operator")),
     }
 }
 
@@ -160,21 +156,28 @@ pub fn parse_condition(mut condition_component_vec: Args, variables: &Variables)
         right: Value::String("".to_string()),
     });
 
-    while condition_component_vec.len() > 0 {
+    while !condition_component_vec.is_empty() {
         let component = condition_component_vec.remove(0);
 
         if component.to_string(variables) == PARENTHESIS_OPEN {
-            let last_close_parentesis_index = condition_component_vec.iter().rposition(|x| x.to_string(variables) == PARENTHESIS_CLOSE).unwrap();
-            let sub_condition_component_vec = condition_component_vec.drain(0..last_close_parentesis_index).collect::<Args>();
+            let last_close_parentesis_index = condition_component_vec
+                .iter()
+                .rposition(|x| x.to_string(variables) == PARENTHESIS_CLOSE)
+                .unwrap();
+            let sub_condition_component_vec = condition_component_vec
+                .drain(0..last_close_parentesis_index)
+                .collect::<Args>();
             sub_condition = Some(parse_condition(sub_condition_component_vec, variables));
             continue;
         }
 
         if component.to_string(variables) == AND {
             if before_operator && sub_condition.is_some() {
-                final_condition = Condition::And(vec![sub_condition.clone().unwrap(), final_condition]);
+                final_condition =
+                    Condition::And(vec![sub_condition.clone().unwrap(), final_condition]);
             } else if !before_operator && sub_condition.is_some() {
-                final_condition = Condition::And(vec![final_condition, sub_condition.clone().unwrap()]);
+                final_condition =
+                    Condition::And(vec![final_condition, sub_condition.clone().unwrap()]);
             } else if sub_condition.is_none() {
                 final_condition = Condition::And(vec![final_condition]);
             } else {
@@ -187,9 +190,11 @@ pub fn parse_condition(mut condition_component_vec: Args, variables: &Variables)
 
         if component.to_string(variables) == OR {
             if before_operator && sub_condition.is_some() {
-                final_condition = Condition::Or(vec![sub_condition.clone().unwrap(), final_condition]);
+                final_condition =
+                    Condition::Or(vec![sub_condition.clone().unwrap(), final_condition]);
             } else if !before_operator && sub_condition.is_some() {
-                final_condition = Condition::Or(vec![final_condition, sub_condition.clone().unwrap()]);
+                final_condition =
+                    Condition::Or(vec![final_condition, sub_condition.clone().unwrap()]);
             } else if sub_condition.is_none() {
                 final_condition = Condition::Or(vec![final_condition]);
             } else {
@@ -215,3 +220,4 @@ pub fn parse_condition(mut condition_component_vec: Args, variables: &Variables)
 
     final_condition
 }
+

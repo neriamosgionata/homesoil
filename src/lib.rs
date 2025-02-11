@@ -12,7 +12,6 @@ pub mod sensor_methods;
 
 pub mod sensor_handlers;
 
-
 #[macro_use]
 extern crate alloc;
 
@@ -25,14 +24,15 @@ pub mod message;
 mod observer;
 pub mod server;
 
-pub mod events;
-pub mod sensor_types;
 pub mod actuator_handlers;
 pub mod actuator_methods;
+pub mod condition_parser;
+pub mod events;
 pub mod script_parser;
 pub mod script_runner;
-pub mod condition_parser;
+pub mod sensor_types;
 
-pub mod helper;
 pub mod auth;
+pub mod helper;
 pub mod script_methods;
+

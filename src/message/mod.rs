@@ -13,19 +13,24 @@ impl Codec {
     }
 }
 
+impl Default for Codec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Decoder for Codec {
     type Item = Packet;
     type Error = io::Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Packet>, io::Error> {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(None);
         }
         let result = (|| {
-            let packet = Ok(Some(Packet::from_bytes(buf).map_err(|cause| {
+            Ok(Some(Packet::from_bytes(buf).map_err(|cause| {
                 io::Error::new(io::ErrorKind::InvalidData, cause.to_string())
-            })?));
-            packet
+            })?))
         })();
         buf.clear();
         result

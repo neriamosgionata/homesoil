@@ -116,7 +116,7 @@ where
                         .send((request.response.unwrap().message, addr))
                         .await;
                 }
-                return Ok(());
+                Ok(())
             }
             Ok(true) => {
                 return self
@@ -161,16 +161,13 @@ where
                 Some(response) => {
                     debug!("Response: {:?}", response);
                     request.response = Some(response);
-                    match self.block_handler.intercept_response(&mut request) {
-                        Err(err) => {
-                            if self.handle_coap_handing_error(&mut request, err) {
-                                self.server
-                                    .send((request.response.unwrap().message, addr))
-                                    .await?;
-                            }
-                            return Ok(());
+                    if let Err(err) = self.block_handler.intercept_response(&mut request) {
+                        if self.handle_coap_handing_error(&mut request, err) {
+                            self.server
+                                .send((request.response.unwrap().message, addr))
+                                .await?;
                         }
-                        _ => {}
+                        return Ok(());
                     }
                     self.server
                         .send((request.response.unwrap().message, addr))
@@ -311,8 +308,7 @@ impl CoAPServer {
             SocketAddr::V4(val) => {
                 match addr {
                     IpAddr::V4(ipv4) => {
-                        let i = val.ip().clone();
-                        socket.join_multicast_v4(ipv4, i).unwrap();
+                        socket.join_multicast_v4(ipv4, val.ip().to_owned()).unwrap();
                         self.multicast_addresses.push(addr);
                     }
                     IpAddr::V6(_ipv6) => { /* handle IPv6 */ }
@@ -341,8 +337,9 @@ impl CoAPServer {
             SocketAddr::V4(val) => {
                 match addr {
                     IpAddr::V4(ipv4) => {
-                        let i = val.ip().clone();
-                        socket.leave_multicast_v4(ipv4, i).unwrap();
+                        socket
+                            .leave_multicast_v4(ipv4, val.ip().to_owned())
+                            .unwrap();
                         let index = self
                             .multicast_addresses
                             .iter()
@@ -379,14 +376,16 @@ impl Drop for CoAPServer {
             match addr {
                 IpAddr::V4(ipv4) => match socket.local_addr().unwrap() {
                     SocketAddr::V4(val) => {
-                        socket.leave_multicast_v4(*ipv4, val.ip().clone()).unwrap();
+                        socket
+                            .leave_multicast_v4(*ipv4, val.ip().to_owned())
+                            .unwrap();
                     }
                     _ => {
                         panic!("should not happen");
                     }
                 },
                 IpAddr::V6(ipv6) => {
-                    socket.leave_multicast_v6(&ipv6, 0).unwrap();
+                    socket.leave_multicast_v6(ipv6, 0).unwrap();
                 }
             }
         }
@@ -660,9 +659,8 @@ pub mod test {
         let payload2_clone = payload2.clone();
         client
             .observe(path, move |msg| {
-                match rx.try_recv() {
-                    Ok(n) => receive_step = n,
-                    _ => (),
+                if let Ok(n) = rx.try_recv() {
+                    receive_step = n;
                 }
 
                 match receive_step {
@@ -682,7 +680,7 @@ pub mod test {
         let client2 = CoAPClient::new(format!("127.0.0.1:{}", server_port)).unwrap();
         client2.send(&request).unwrap();
         client2.receive().unwrap();
-        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).unwrap(), ());
+        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).is_ok(), true);
     }
 
     #[test]

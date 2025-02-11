@@ -1,9 +1,20 @@
 use diesel::{Identifiable, Insertable, Queryable, QueryableByName, Selectable};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 //SENSORS
 
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName, Insertable)]
+#[derive(
+    Debug,
+    Clone,
+    Queryable,
+    Selectable,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Identifiable,
+    QueryableByName,
+    Insertable,
+)]
 #[diesel(table_name = crate::schema::sensors)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Sensor {
@@ -96,7 +107,17 @@ impl Sensor {
     }
 }
 
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
+#[derive(
+    Debug,
+    Clone,
+    Queryable,
+    Selectable,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Identifiable,
+    QueryableByName,
+)]
 #[diesel(table_name = crate::schema::sensor_reads)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 #[diesel(belongs_to(Sensor))]
@@ -150,7 +171,17 @@ impl SensorRead {
 
 //ACTUATORS
 
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
+#[derive(
+    Debug,
+    Clone,
+    Queryable,
+    Selectable,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Identifiable,
+    QueryableByName,
+)]
 #[diesel(table_name = crate::schema::actuators)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Actuator {
@@ -515,7 +546,6 @@ impl NewActuator {
     }
 }
 
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UpdateActuatorName {
     id: i32,
@@ -548,7 +578,6 @@ impl UpdateActuatorName {
         self.updated_at = Some(updated_at);
     }
 }
-
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UpdateActuatorState {
@@ -602,7 +631,17 @@ impl ActuatorUnregister {
     }
 }
 
-#[derive(Debug, Clone, Queryable, Selectable, Deserialize, Serialize, PartialEq, Identifiable, QueryableByName)]
+#[derive(
+    Debug,
+    Clone,
+    Queryable,
+    Selectable,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Identifiable,
+    QueryableByName,
+)]
 #[diesel(table_name = crate::schema::scripts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Script {
@@ -717,7 +756,6 @@ impl DeleteScript {
     }
 }
 
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UpdateScript {
     id: i32,
@@ -780,7 +818,6 @@ impl UpdateScript {
         self.status = status;
     }
 }
-
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UpdateSchedule {
@@ -845,4 +882,3 @@ impl RemoveSchedule {
         self.updated_at = Some(updated_at);
     }
 }
-

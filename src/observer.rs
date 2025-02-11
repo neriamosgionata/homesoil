@@ -63,7 +63,7 @@ impl Observer {
             resources: HashMap::new(),
             register_resources: HashMap::new(),
             unacknowledge_messages: HashMap::new(),
-            tx_sender: tx_sender,
+            tx_sender,
             current_message_id: 0,
             timer: IntervalStream::new(interval(Duration::from_secs(1))).fuse(),
         }
@@ -85,19 +85,19 @@ impl Observer {
             (&Method::Get, Some(observe_option)) => match observe_option {
                 Ok(ObserveOption::Register) => {
                     self.register(request).await;
-                    return false;
+                    false
                 }
                 Ok(ObserveOption::Deregister) => {
                     self.deregister(request);
-                    return true;
+                    true
                 }
-                _ => return true,
+                _ => true,
             },
             (&Method::Put, _) => {
                 self.resource_changed(request).await;
-                return true;
+                true
             }
-            _ => return true,
+            _ => true,
         }
     }
 
@@ -140,7 +140,7 @@ impl Observer {
         self.record_register_resource(
             &register_address,
             &resource_path,
-            &request.message.get_token(),
+            request.message.get_token(),
         );
 
         let resource = self.resources.get(&resource_path).unwrap();
@@ -167,24 +167,20 @@ impl Observer {
         self.remove_register_resource(
             &register_address,
             &resource_path,
-            &request.message.get_token(),
+            request.message.get_token(),
         );
     }
 
     async fn resource_changed(&mut self, request: &CoapRequest<SocketAddr>) {
         let resource_path = request.get_path();
-        let ref resource_payload = request.message.payload;
+        let resource_payload = &request.message.payload;
 
         debug!("resource_changed {} {:?}", resource_path, resource_payload);
 
         let register_resource_keys: Vec<String>;
         {
-            let resource = self.record_resource(&resource_path, &resource_payload);
-            register_resource_keys = resource
-                .register_resources
-                .iter()
-                .map(|k| k.clone())
-                .collect();
+            let resource = self.record_resource(&resource_path, resource_payload);
+            register_resource_keys = resource.register_resources.iter().cloned().collect();
         }
 
         for register_resource_key in register_resource_keys {
@@ -198,14 +194,14 @@ impl Observer {
     fn acknowledge(&mut self, request: &CoapRequest<SocketAddr>) {
         self.remove_unacknowledge_message(
             &request.message.header.message_id,
-            &request.message.get_token(),
+            request.message.get_token(),
         );
     }
 
     fn record_register_resource(&mut self, address: &SocketAddr, path: &String, token: &[u8]) {
         let resource = self.resources.get_mut(path).unwrap();
-        let register_key = Self::format_register(&address);
-        let register_resource_key = Self::format_register_resource(&address, path);
+        let register_key = Self::format_register(address);
+        let register_resource_key = Self::format_register_resource(address, path);
 
         self.register_resources
             .entry(register_resource_key.clone())
@@ -242,7 +238,7 @@ impl Observer {
         path: &String,
         token: &[u8],
     ) -> bool {
-        let register_resource_key = Self::format_register_resource(&address, path);
+        let register_resource_key = Self::format_register_resource(address, path);
 
         if let Some(register_resource) = self.register_resources.get(&register_resource_key) {
             if register_resource.token != *token {
@@ -280,7 +276,7 @@ impl Observer {
         }
 
         self.register_resources.remove(&register_resource_key);
-        return true;
+        true
     }
 
     fn record_resource(&mut self, path: &String, payload: &Vec<u8>) -> &ResourceItem {
@@ -289,15 +285,13 @@ impl Observer {
                 let r = resource.into_mut();
                 r.sequence += 1;
                 r.payload = payload.clone();
-                return r;
+                r
             }
-            Entry::Vacant(v) => {
-                return v.insert(ResourceItem {
-                    payload: payload.clone(),
-                    register_resources: HashSet::new(),
-                    sequence: 0,
-                });
-            }
+            Entry::Vacant(v) => v.insert(ResourceItem {
+                payload: payload.clone(),
+                register_resources: HashSet::new(),
+                sequence: 0,
+            }),
         }
     }
 
@@ -327,7 +321,7 @@ impl Observer {
             .register_resources
             .get_mut(register_resource_key)
             .unwrap();
-        let ref message_id = register_resource.unacknowledge_message.unwrap();
+        let message_id = &register_resource.unacknowledge_message.unwrap();
 
         let try_again;
         {
@@ -350,7 +344,7 @@ impl Observer {
             self.unacknowledge_messages.remove(message_id);
         }
 
-        return try_again;
+        try_again
     }
 
     fn remove_unacknowledge_message(&mut self, message_id: &u16, token: &[u8]) {
@@ -374,7 +368,7 @@ impl Observer {
 
         debug!("notify {} {}", register_resource_key, message_id);
 
-        let ref mut message = Packet::new();
+        let message = &mut Packet::new();
         message.header.set_type(MessageType::Confirmable);
         message.header.code = MessageClass::Response(Status::Content);
 
@@ -391,7 +385,7 @@ impl Observer {
             address = register_resource.register.parse().unwrap();
         }
 
-        self.send_message(&address, &message).await;
+        self.send_message(&address, message).await;
     }
 
     async fn send_message(&mut self, address: &SocketAddr, message: &Packet) {
@@ -401,7 +395,7 @@ impl Observer {
 
     fn gen_message_id(&mut self) -> u16 {
         self.current_message_id += 1;
-        return self.current_message_id;
+        self.current_message_id
     }
 
     fn format_register(address: &SocketAddr) -> String {
@@ -422,11 +416,11 @@ mod test {
 
     async fn request_handler(req: CoapRequest<SocketAddr>) -> Option<CoapResponse> {
         match req.get_method() {
-            &coap_lite::RequestType::Get => {
+            coap_lite::RequestType::Get => {
                 let observe_option = req.get_observe_flag().unwrap().unwrap();
                 assert_eq!(observe_option, ObserveOption::Deregister);
             }
-            &coap_lite::RequestType::Put => {}
+            coap_lite::RequestType::Put => {}
             _ => panic!("unexpected request"),
         }
 
@@ -470,9 +464,8 @@ mod test {
         let mut receive_step = 1;
         client
             .observe(path, move |msg| {
-                match rx.try_recv() {
-                    Ok(n) => receive_step = n,
-                    _ => (),
+                if let Ok(n) = rx.try_recv() {
+                    receive_step = n;
                 }
 
                 match receive_step {
@@ -494,7 +487,7 @@ mod test {
         let client2 = CoAPClient::new(server_address).unwrap();
         client2.send(&request).unwrap();
         client2.receive().unwrap();
-        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).unwrap(), ());
+        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).is_ok(), true);
     }
 
     #[test]

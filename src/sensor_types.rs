@@ -8,3 +8,4 @@ pub const SENSOR_TYPE_RAIN: &str = "rain";
 pub const SENSOR_TYPE_UV: &str = "uv";
 pub const SENSOR_TYPE_SOLAR_RADIATION: &str = "solar_radiation";
 pub const SENSOR_TYPE_UNKNOWN: &str = "unknown";
+
