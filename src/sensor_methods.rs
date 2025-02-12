@@ -42,31 +42,31 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
     new_sensor.set_name(Some("Unknown sensor".to_string()));
     new_sensor.set_sensor_type(SENSOR_TYPE_UNKNOWN.to_string());
 
-    if sensor_t == SENSOR_TYPE_CURRENT.to_string() {
+    if sensor_t == SENSOR_TYPE_CURRENT {
         new_sensor.set_name(Some("Current sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_CURRENT.to_string());
-    } else if sensor_t == SENSOR_TYPE_TEMPERATURE.to_string() {
+    } else if sensor_t == SENSOR_TYPE_TEMPERATURE {
         new_sensor.set_name(Some("Temperature sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_TEMPERATURE.to_string());
-    } else if sensor_t == SENSOR_TYPE_HUMIDITY.to_string() {
+    } else if sensor_t == SENSOR_TYPE_HUMIDITY {
         new_sensor.set_name(Some("Humidity sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_HUMIDITY.to_string());
-    } else if sensor_t == SENSOR_TYPE_PRESSURE.to_string() {
+    } else if sensor_t == SENSOR_TYPE_PRESSURE {
         new_sensor.set_name(Some("Pressure sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_PRESSURE.to_string());
-    } else if sensor_t == SENSOR_TYPE_WIND_SPEED.to_string() {
+    } else if sensor_t == SENSOR_TYPE_WIND_SPEED {
         new_sensor.set_name(Some("Wind sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_WIND_SPEED.to_string());
-    } else if sensor_t == SENSOR_TYPE_WIND_DIRECTION.to_string() {
+    } else if sensor_t == SENSOR_TYPE_WIND_DIRECTION {
         new_sensor.set_name(Some("Wind direction sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_WIND_DIRECTION.to_string());
-    } else if sensor_t == SENSOR_TYPE_RAIN.to_string() {
+    } else if sensor_t == SENSOR_TYPE_RAIN {
         new_sensor.set_name(Some("Rain sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_RAIN.to_string());
-    } else if sensor_t == SENSOR_TYPE_UV.to_string() {
+    } else if sensor_t == SENSOR_TYPE_UV {
         new_sensor.set_name(Some("UV sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_UV.to_string());
-    } else if sensor_t == SENSOR_TYPE_SOLAR_RADIATION.to_string() {
+    } else if sensor_t == SENSOR_TYPE_SOLAR_RADIATION {
         new_sensor.set_name(Some("Solar radiation sensor".to_string()));
         new_sensor.set_sensor_type(SENSOR_TYPE_SOLAR_RADIATION.to_string());
     }
@@ -87,10 +87,10 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
         .filter(ip_address.like(&new_sensor.get_ip_address()))
         .get_result(conn);
 
-    return match sensor {
+    match sensor {
         Ok(sensor) => Ok(sensor),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn unregister_sensor(payload: String) -> Result<Sensor> {
@@ -122,10 +122,10 @@ pub fn unregister_sensor(payload: String) -> Result<Sensor> {
     let res =
         diesel::delete(sensors::table.filter(id.eq(sensor_unregister.get_id()))).execute(conn);
 
-    return match res {
+    match res {
         Ok(_) => Ok(sensor.unwrap()),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn change_sensor_name(payload: String) -> Result<Sensor> {
@@ -153,10 +153,10 @@ pub fn change_sensor_name(payload: String) -> Result<Sensor> {
         .filter(id.eq(update_sensor_name.get_id()))
         .get_result(conn);
 
-    return match sensor {
+    match sensor {
         Ok(sensor) => Ok(sensor),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn read_sensor(payload: String) -> Result<SensorRead> {
@@ -193,10 +193,10 @@ pub fn read_sensor(payload: String) -> Result<SensorRead> {
         .filter(sensor_value.like(&new_sensor_read.get_sensor_value()))
         .get_result(conn);
 
-    return match sensor_read {
+    match sensor_read {
         Ok(sensor_read) => Ok(sensor_read),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
@@ -204,10 +204,10 @@ pub fn get_all_registered_sensors() -> Result<Vec<Sensor>> {
 
     let sensors = sensors::table.get_results(conn);
 
-    return match sensors {
+    match sensors {
         Ok(sensors) => Ok(sensors),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn get_all_last_sensor_readings() -> Result<Vec<SensorRead>> {
@@ -219,16 +219,16 @@ pub fn get_all_last_sensor_readings() -> Result<Vec<SensorRead>> {
     ")
         .load(conn);
 
-    return match sensor_reads {
+    match sensor_reads {
         Ok(sensor_reads) => Ok(sensor_reads),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn get_sensor_readings(
     other_sensor_id: i32,
-    from_date: &String,
-    to_date: &String,
+    from_date: &str,
+    to_date: &str,
 ) -> Result<Vec<SensorRead>> {
     let conn = &mut connect()?;
 
@@ -246,10 +246,10 @@ pub fn get_sensor_readings(
         .limit(50)
         .get_results(conn);
 
-    return match sensor_reads {
+    match sensor_reads {
         Ok(sensor_reads) => Ok(sensor_reads),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
 
 pub fn delete_old_sensor_reads_records() -> Result<usize> {
@@ -261,9 +261,8 @@ pub fn delete_old_sensor_reads_records() -> Result<usize> {
     )
     .execute(conn);
 
-    return match res {
+    match res {
         Ok(res) => Ok(res),
         Err(e) => Err(Error::from(e)),
-    };
+    }
 }
-

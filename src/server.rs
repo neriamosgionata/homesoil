@@ -230,22 +230,6 @@ where
     /// - It's value can be between 0x0 and 0xf.
     /// - To join multiple segments, you have to call enable_discovery for each of the segments.
     ///
-    /// Some Multicast address scope
-    /// IPv6        IPv4 equivalent[16]	        Scope	            Purpose
-    /// ffx1::/16	127.0.0.0/8	                Interface-local	    Packets with this destination address may not be sent over any network link, but must remain within the current node; this is the multicast equivalent of the unicast loopback address.
-    /// ffx2::/16	224.0.0.0/24	            Link-local	        Packets with this destination address may not be routed anywhere.
-    /// ffx3::/16	239.255.0.0/16	            IPv4 local scope
-    /// ffx4::/16	            	            Admin-local	        The smallest scope that must be administratively configured.
-    /// ffx5::/16		                        Site-local	        Restricted to the local physical network.
-    /// ffx8::/16	239.192.0.0/14	            Organization-local	Restricted to networks used by the organization administering the local network. (For example, these addresses might be used over VPNs; when packets for this group are routed over the public internet (where these addresses are not valid), they would have to be encapsulated in some other protocol.)
-    /// ffxe::/16	224.0.1.0-238.255.255.255	Global scope	    Eligible to be routed over the public internet.
-    ///
-    /// Notable addresses:
-    /// ff02::1	    All nodes on the local network segment
-    /// ff0x::c	    Simple Service Discovery Protocol
-    /// ff0x::fb	Multicast DNS
-    /// ff0x::fb	Multicast CoAP
-    /// ff0x::114	Used for experiments
     pub fn join_multicast(&mut self, addr: IpAddr) {
         self.server.join_multicast(addr);
     }
@@ -680,7 +664,7 @@ pub mod test {
         let client2 = CoAPClient::new(format!("127.0.0.1:{}", server_port)).unwrap();
         client2.send(&request).unwrap();
         client2.receive().unwrap();
-        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).is_ok(), true);
+        assert!(rx2.recv_timeout(Duration::new(5, 0)).is_ok());
     }
 
     #[test]

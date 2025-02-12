@@ -10,6 +10,7 @@ use log::{debug, warn};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     net::SocketAddr,
+    str::FromStr,
     time::Duration,
 };
 use tokio::time::interval;
@@ -107,8 +108,8 @@ impl Observer {
         {
             register_resource_keys = self
                 .unacknowledge_messages
-                .iter()
-                .map(|(_, msg)| msg.register_resource.clone())
+                .values()
+                .map(|msg| msg.register_resource.clone())
                 .collect();
         }
 
@@ -173,7 +174,7 @@ impl Observer {
 
     async fn resource_changed(&mut self, request: &CoapRequest<SocketAddr>) {
         let resource_path = request.get_path();
-        let resource_payload = &request.message.payload;
+        let resource_payload = request.message.payload.clone();
 
         debug!("resource_changed {} {:?}", resource_path, resource_payload);
 
@@ -251,23 +252,18 @@ impl Observer {
                     .unwrap();
             }
 
-            assert_eq!(
-                self.resources
-                    .get_mut(path)
-                    .unwrap()
-                    .register_resources
-                    .remove(&register_resource_key),
-                true
-            );
+            assert!(self
+                .resources
+                .get_mut(path)
+                .unwrap()
+                .register_resources
+                .remove(&register_resource_key));
 
             let remove_register;
             {
                 let register = self.registers.get_mut(&register_resource.register).unwrap();
-                assert_eq!(
-                    register.register_resources.remove(&register_resource_key),
-                    true
-                );
-                remove_register = register.register_resources.len() == 0;
+                assert!(register.register_resources.remove(&register_resource_key),);
+                remove_register = register.register_resources.is_empty();
             }
 
             if remove_register {
@@ -279,8 +275,8 @@ impl Observer {
         true
     }
 
-    fn record_resource(&mut self, path: &String, payload: &Vec<u8>) -> &ResourceItem {
-        match self.resources.entry(path.clone()) {
+    fn record_resource(&mut self, path: &str, payload: Vec<u8>) -> &ResourceItem {
+        match self.resources.entry(String::from_str(path).unwrap()) {
             Entry::Occupied(resource) => {
                 let r = resource.into_mut();
                 r.sequence += 1;
@@ -487,7 +483,7 @@ mod test {
         let client2 = CoAPClient::new(server_address).unwrap();
         client2.send(&request).unwrap();
         client2.receive().unwrap();
-        assert_eq!(rx2.recv_timeout(Duration::new(5, 0)).is_ok(), true);
+        assert!(rx2.recv_timeout(Duration::new(5, 0)).is_ok());
     }
 
     #[test]

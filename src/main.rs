@@ -1,3 +1,4 @@
+use anyhow::Result;
 use dotenv::dotenv;
 use homesoil::db::connect;
 use homesoil::servers::{
@@ -6,7 +7,7 @@ use homesoil::servers::{
 use local_ip_address::local_ip;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     dotenv().ok();
     match connect() {
         Ok(_) => {}
@@ -32,11 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let current_ip_address_socket_io = format!("{}:{}", current_ip_address, socket_port);
     let current_ip_address_coap = format!("{}:{}", current_ip_address, coap_port);
 
-    let io = run_socket_server(&current_ip_address_socket_io).await?;
+    let io = run_socket_server(String::leak(current_ip_address_socket_io)).await?;
 
     run_sensor_health_check(&io).await;
 
-    run_coap_server(&current_ip_address_coap, &io).await;
+    run_coap_server(String::leak(current_ip_address_coap), &io).await;
 
     check_for_old_sensor_reads_records().await;
 
@@ -44,4 +45,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

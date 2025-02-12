@@ -46,18 +46,14 @@ impl CoAPClient {
             .and_then(|mut iter| match iter.next() {
                 Some(paddr) => UdpSocket::bind(bind_addr).and_then(|s| {
                     s.set_read_timeout(Some(Duration::new(DEFAULT_RECEIVE_TIMEOUT, 0)))
-                        .and_then(|_| {
-                            Ok(CoAPClient {
-                                socket: s,
-                                peer_addr: paddr,
-                                observe_sender: None,
-                                observe_thread: None,
-                                block2_states: LruCache::with_expiry_duration(Duration::from_secs(
-                                    120,
-                                )),
-                                block1_size: MAX_PAYLOAD_BLOCK,
-                                message_id: 0,
-                            })
+                        .map(|_| CoAPClient {
+                            socket: s,
+                            peer_addr: paddr,
+                            observe_sender: None,
+                            observe_thread: None,
+                            block2_states: LruCache::with_expiry_duration(Duration::from_secs(120)),
+                            block1_size: MAX_PAYLOAD_BLOCK,
+                            message_id: 0,
                         })
                 }),
                 None => Err(Error::new(ErrorKind::Other, "no address")),
@@ -224,11 +220,11 @@ impl CoAPClient {
 
         handler(response.message);
 
-        let socket;
-        match self.socket.try_clone() {
-            Ok(good_socket) => socket = good_socket,
+        let socket = match self.socket.try_clone() {
+            Ok(good_socket) => good_socket,
             Err(_) => return Err(Error::new(ErrorKind::Other, "network error")),
-        }
+        };
+
         let peer_addr = self.peer_addr;
         let (observe_sender, observe_receiver) = mpsc::channel();
         let observe_path = String::from(resource_path);
@@ -289,7 +285,9 @@ impl CoAPClient {
         if let Some(ref sender) = self.observe_sender.take() {
             sender.send(ObserveMessage::Terminate).unwrap();
 
-            self.observe_thread.take().map(|g| g.join().unwrap());
+            if let Some(g) = self.observe_thread.take() {
+                g.join().unwrap();
+            }
         }
     }
 
@@ -349,9 +347,6 @@ impl CoAPClient {
     /// Send a request to all CoAP devices.
     /// - IPv4 AllCoAP multicast address is '224.0.1.187'
     /// - IPv6 AllCoAp multicast addresses are 'ff0?::fd'
-    /// Parameter segment is used with IPv6 to determine the first octet.
-    /// It's value can be between 0x0 and 0xf. To address multiple segments,
-    /// you have to call send_all_coap for each of the segments.
     pub fn send_all_coap(&self, request: &CoapRequest<SocketAddr>, segment: u8) -> Result<()> {
         assert!(segment <= 0xf);
         let addr = match self.peer_addr {

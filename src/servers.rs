@@ -27,7 +27,7 @@ struct AuthData {
     token: String,
 }
 
-pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
+pub async fn run_socket_server(address: &'static str) -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
         .connect_timeout(Duration::from_secs(30))
         .req_path("/socket.io")
@@ -79,13 +79,11 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
         }
     });
 
-    let boxed_address = Box::new(address.clone());
-
     spawn(move || {
         Runtime::new()
             .expect("Failed to create Tokio runtime")
             .block_on(async {
-                println!("Starting SocketIO server on {}", boxed_address.as_str());
+                println!("Starting SocketIO server on {}", address);
 
                 let app = Router::new()
                     .route("/", get(|| async { "OK" }))
@@ -93,8 +91,7 @@ pub async fn run_socket_server(address: &String) -> Result<SocketIo> {
                     .layer(CorsLayer);
 
                 AxumServer::bind(
-                    &boxed_address
-                        .as_str()
+                    &address
                         .parse::<SocketAddr>()
                         .expect("Failed to parse SocketIO server address"),
                 )
@@ -129,17 +126,16 @@ pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
     })
 }
 
-pub async fn run_coap_server(address: &String, socket: &SocketIo) {
+pub async fn run_coap_server(address: &'static str, socket: &SocketIo) {
     let boxed_socket = Arc::new(socket.clone());
-    let boxed_address = Arc::new(address.clone());
 
     spawn(move || {
-        println!("Starting CoAP server on {}", boxed_address.as_str());
+        println!("Starting CoAP server on {}", address);
 
         Runtime::new()
             .expect("Failed to create Tokio runtime")
             .block_on(async {
-                let mut server = Server::new(boxed_address.as_str()).unwrap();
+                let mut server = Server::new(address).unwrap();
 
                 server
                     .run(|request| async {
@@ -175,4 +171,3 @@ pub async fn check_for_old_sensor_reads_records() {
         std::thread::sleep(Duration::from_secs(3600));
     });
 }
-

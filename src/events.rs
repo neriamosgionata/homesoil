@@ -4,7 +4,7 @@ use crate::helper::{send_message_to_dashboard, DashboardMessageType};
 use crate::models::{Actuator, GetSensorReadings, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
-use crate::script_methods::{delete_script, save_new_script, update_script};
+use crate::script_methods::{delete_script, get_scripts, save_new_script, update_script};
 use crate::script_parser::{CommandFunctionResult, Script};
 use crate::sensor_methods::{change_sensor_name, get_sensor_readings, unregister_sensor};
 use crate::CoAPClient;
@@ -53,6 +53,7 @@ pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
 pub const REMOVE_ACTUATOR_EVENT: &str = "remove-actuator";
 
 //SCRIPTS
+pub const GET_ALL_SCRIPTS_EVENT: &str = "get-all-scripts";
 pub const RUN_SCRIPT_EVENT: &str = "run-script";
 pub const ADD_SCRIPT_EVENT: &str = "add-script";
 pub const REMOVE_SCRIPT_EVENT: &str = "remove-script";
@@ -60,6 +61,7 @@ pub const MODIFY_SCRIPT_EVENT: &str = "modify-script";
 pub const ADD_SCRIPT_SCHEDULE_EVENT: &str = "add-script-schedule";
 pub const REMOVE_SCRIPT_SCHEDULE_EVENT: &str = "remove-script-schedule";
 
+pub const ALL_SCRIPTS_EVENT: &str = "all-scripts";
 pub const SCRIPT_SAVED_EVENT: &str = "script-saved";
 pub const SCRIPT_DELETED_EVENT: &str = "script-deleted";
 pub const SCRIPT_MODIFIED_EVENT: &str = "script-modified";
@@ -568,6 +570,26 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         }
     });
 
+    socket.on(GET_ALL_SCRIPTS_EVENT, |s: SocketRef| {
+        let all_scripts = get_scripts();
+
+        if let Ok(scripts) = all_scripts {
+            let _: Result<(), _> = s.emit(
+                ALL_SCRIPTS_EVENT,
+                json!({
+                       "scripts_array": scripts,
+                }),
+            );
+
+            let _: Result<(), _> = s.broadcast().emit(
+                ALL_SCRIPTS_EVENT,
+                json!({
+                       "scripts_array": scripts,
+                }),
+            );
+        }
+    });
+
     socket.on(RUN_SCRIPT_EVENT, |s: SocketRef, data: Data<i32>| {
         let payload = data.0;
 
@@ -664,8 +686,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     });
 
     socket.on(ADD_SCRIPT_EVENT, |s: SocketRef, data: Data<String>| {
-        println!("ADD_SCRIPT_EVENT {}", data.0);
-
         let payload = data.0;
 
         match save_new_script(payload) {
@@ -897,4 +917,3 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         },
     );
 }
-

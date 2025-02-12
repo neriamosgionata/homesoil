@@ -8,12 +8,12 @@ use regex::Regex;
 use socketioxide::extract::SocketRef;
 use std::collections::HashMap;
 
-type Command = &'static str;
-
 #[cfg(windows)]
 const COMMAND_END: &str = "\r\n";
 #[cfg(not(windows))]
 const COMMAND_END: &str = "\n";
+
+type Command = &'static str;
 
 const COMMAND_ACTIVATE_ACTUATOR: Command = "ACTIVATE";
 const COMMAND_DEACTIVATE_ACTUATOR: Command = "DEACTIVATE";
@@ -122,7 +122,7 @@ fn change_numeric_variable_value(
     variables: &Variables,
     operation: Command,
 ) -> Result<(String, f64)> {
-    let variable_name = match args.get(0).unwrap() {
+    let variable_name = match args.first().unwrap() {
         Value::Variable(s) => s,
         _ => {
             return Err(Error::msg("Invalid variable name".to_string()));
@@ -296,7 +296,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             }
             let args = args.clone().unwrap();
 
-            let variable_name = match args.get(0).unwrap() {
+            let variable_name = match args.first().unwrap() {
                 Value::Variable(s) => s,
                 _ => {
                     return CommandFunctionResult::Error("Invalid variable name".to_string());
@@ -319,7 +319,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let variable_name = match args.get(0).unwrap() {
+            let variable_name = match args.first().unwrap() {
                 Value::Variable(s) => s,
                 _ => {
                     return CommandFunctionResult::Error("Invalid variable name".to_string());
@@ -466,7 +466,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let message = args.get(0).unwrap().clone();
+            let message = args.first().unwrap().clone();
 
             let message = match message {
                 Value::String(s) => s,
@@ -601,7 +601,7 @@ fn args_required(args: &Option<Args>, number_of_args: isize) -> Result<()> {
     }
 
     if number_of_args != -1i8 as isize
-        && args.clone().unwrap().len() != number_of_args.abs() as usize
+        && args.clone().unwrap().len() != number_of_args.unsigned_abs()
     {
         return Err(anyhow!("Invalid number of arguments"));
     }
@@ -1023,4 +1023,3 @@ impl Script {
         Ok(CommandFunctionResult::Return(Value::None))
     }
 }
-
