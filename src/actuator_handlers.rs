@@ -25,7 +25,10 @@ pub fn actuator_register_handler<'a>(
     request: &'a CoapRequest<SocketAddr>,
 ) -> BoxFuture<'a, String> {
     async move {
-        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(request.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => return "KO".to_string(),
+        };
 
         if request.get_method() != &RequestType::Post {
             return "KO".to_string();
@@ -93,7 +96,10 @@ pub fn actuator_unregister_handler<'a>(
     request: &'a CoapRequest<SocketAddr>,
 ) -> BoxFuture<'a, String> {
     async move {
-        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(request.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => return "KO".to_string(),
+        };
 
         if request.get_method() != &RequestType::Post {
             return "KO".to_string();
@@ -152,7 +158,10 @@ pub fn actuator_update_handler<'a>(
             return "KO".to_string();
         }
 
-        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(request.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => return "KO".to_string(),
+        };
 
         match change_actuator_name(payload) {
             Ok(actuator) => {
@@ -211,7 +220,10 @@ pub fn actuator_update_state_handler<'a>(
             return "KO".to_string();
         }
 
-        let payload = String::from_utf8(request.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(request.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => return "KO".to_string(),
+        };
 
         match change_actuator_state(payload) {
             Ok(actuator) => {
@@ -325,7 +337,12 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
             }
         }
         Err(_) => {
-            let conn = &mut connect().unwrap();
+            let conn = &mut match connect() {
+                Ok(conn) => conn,
+                Err(_) => {
+                    return;
+                }
+            };
 
             let uat = chrono::Local::now().naive_local();
 

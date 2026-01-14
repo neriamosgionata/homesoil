@@ -54,10 +54,10 @@ fn operation_to_numeric_variable_value(
 ) -> Result<f64> {
     if operation == COMMAND_ADD_TO_VARIABLE {
         let v = match variable {
-            Value::Int32(s) => *s as f64 - value,
-            Value::Int64(s) => *s as f64 - value,
-            Value::Float32(s) => *s as f64 - value,
-            Value::Float64(s) => *s - value,
+            Value::Int32(s) => *s as f64 + value,
+            Value::Int64(s) => *s as f64 + value,
+            Value::Float32(s) => *s as f64 + value,
+            Value::Float64(s) => *s + value,
             _ => {
                 return Err(Error::msg("Invalid variable value".to_string()));
             }
@@ -66,10 +66,10 @@ fn operation_to_numeric_variable_value(
         Ok(v)
     } else if operation == COMMAND_SUBTRACT_FROM_VARIABLE {
         let v = match variable {
-            Value::Int32(s) => *s as f64 + value,
-            Value::Int64(s) => *s as f64 + value,
-            Value::Float32(s) => *s as f64 + value,
-            Value::Float64(s) => *s + value,
+            Value::Int32(s) => *s as f64 - value,
+            Value::Int64(s) => *s as f64 - value,
+            Value::Float32(s) => *s as f64 - value,
+            Value::Float64(s) => *s - value,
             _ => {
                 return Err(Error::msg("Invalid variable value".to_string()));
             }
@@ -620,7 +620,7 @@ fn run_inner_executions(
                 let res = command.execute(variables, socket);
 
                 if res.is_break() {
-                    break;
+                    return CommandFunctionResult::Break;
                 }
 
                 if res.is_error() {
@@ -640,7 +640,7 @@ fn run_inner_executions(
                 let res = block.execute(variables, socket);
 
                 if res.is_break() {
-                    break;
+                    return CommandFunctionResult::Break;
                 }
 
                 if res.is_error() {
@@ -668,17 +668,33 @@ fn parse_argument(s: String) -> Value {
     } else if "false" == s {
         Value::Boolean(false)
     } else if s.starts_with("\"") && s.ends_with("\"") {
-        Value::String(s)
+        Value::String(s[1..s.len() - 1].to_string())
     } else if s.starts_with("$") {
         Value::Variable(s)
     } else if (s.starts_with("[") && s.ends_with("]")) || (s.starts_with("{") && s.ends_with("}")) {
-        Value::Array(
-            s.split(",")
-                .map(|arg| parse_argument(arg.to_string()))
-                .collect::<Vec<Value>>(),
-        )
+        let inner = &s[1..s.len() - 1];
+        if inner.is_empty() {
+            Value::Array(Vec::new())
+        } else {
+            Value::Array(
+                inner
+                    .split(",")
+                    .map(|arg| parse_argument(arg.trim().to_string()))
+                    .collect::<Vec<Value>>(),
+            )
+        }
+    } else if s.contains('.') {
+        if let Ok(f) = s.parse::<f64>() {
+            Value::Float64(f)
+        } else {
+            Value::String(s)
+        }
+    } else if let Ok(i) = s.parse::<i32>() {
+        Value::Int32(i)
+    } else if let Ok(i) = s.parse::<i64>() {
+        Value::Int64(i)
     } else {
-        Value::Int32(s.parse::<i32>().unwrap())
+        Value::String(s)
     }
 }
 
@@ -731,6 +747,8 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
         COMMAND_SUBTRACT_FROM_VARIABLE => COMMAND_SUBTRACT_FROM_VARIABLE,
         COMMAND_MULTIPLY_VARIABLE => COMMAND_MULTIPLY_VARIABLE,
         COMMAND_DIVIDE_VARIABLE => COMMAND_DIVIDE_VARIABLE,
+        COMMAND_MODULO_VARIABLE => COMMAND_MODULO_VARIABLE,
+        COMMAND_DELAY => COMMAND_DELAY,
         _ => {
             return Err(anyhow!("Unknown command: {}", s));
         }
@@ -834,10 +852,9 @@ impl ScriptCommand {
         let (command, arguments) = parse_command(fragment)?;
 
         Ok(ScriptCommand {
-            arguments: if !arguments.clone().unwrap().is_empty() {
-                Some(arguments.clone().unwrap())
-            } else {
-                None
+            arguments: match &arguments {
+                Some(args) if !args.is_empty() => Some(args.clone()),
+                _ => None,
             },
             function: parse_command_function(command),
         })
@@ -960,10 +977,10 @@ fn parse_block(fragment: String) -> Result<Vec<ScriptExecution>> {
 
 fn parse_execution_step(fragment: String) -> Result<Vec<ScriptExecution>> {
     if fragment.contains(INSTRUCTION_BLOCK_START) && fragment.contains(INSTRUCTION_BLOCK_END) {
-        return Ok(parse_block(fragment).unwrap());
+        return parse_block(fragment);
     }
 
-    Ok(parse_commands(fragment).unwrap())
+    parse_commands(fragment)
 }
 
 pub struct Script {

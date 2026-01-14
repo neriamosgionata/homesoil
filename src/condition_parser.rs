@@ -216,6 +216,7 @@ pub fn parse_condition(mut condition_component_vec: Args, variables: &Variables)
         }
 
         expression.set_right(component);
+        final_condition = Condition::Expression(expression.clone());
     }
 
     final_condition

@@ -232,16 +232,15 @@ pub fn get_sensor_readings(
 ) -> Result<Vec<SensorRead>> {
     let conn = &mut connect()?;
 
+    let from_datetime = chrono::NaiveDateTime::parse_from_str(from_date, "%Y-%m-%d %H:%M:%S")
+        .map_err(|e| Error::msg(format!("Invalid from_date format: {}", e)))?;
+    let to_datetime = chrono::NaiveDateTime::parse_from_str(to_date, "%Y-%m-%d %H:%M:%S")
+        .map_err(|e| Error::msg(format!("Invalid to_date format: {}", e)))?;
+
     let sensor_reads = sensor_reads::table
         .filter(sensor_id.eq(other_sensor_id))
-        .filter(
-            created_at
-                .ge(chrono::NaiveDateTime::parse_from_str(from_date, "%Y-%m-%d %H:%M:%S").unwrap()),
-        )
-        .filter(
-            created_at
-                .le(chrono::NaiveDateTime::parse_from_str(to_date, "%Y-%m-%d %H:%M:%S").unwrap()),
-        )
+        .filter(created_at.ge(from_datetime))
+        .filter(created_at.le(to_datetime))
         .order_by(sensor_read_id.desc())
         .limit(50)
         .get_results(conn);

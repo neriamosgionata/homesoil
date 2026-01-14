@@ -75,7 +75,13 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         |s: SocketRef, data: Data<String>| {
             let payload = data.0;
 
-            let gsr = serde_json::from_str::<GetSensorReadings>(&payload).unwrap();
+            let gsr = match serde_json::from_str::<GetSensorReadings>(&payload) {
+                Ok(gsr) => gsr,
+                Err(e) => {
+                    println!("Error parsing sensor readings request: {:?}", e);
+                    return;
+                }
+            };
 
             match get_sensor_readings(gsr.get_id(), gsr.get_from_date(), gsr.get_to_date()) {
                 Ok(sensor_reads) => {
@@ -105,21 +111,24 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(PULSE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
         let actuator_id = data.0;
 
-        let conn = &mut connect().unwrap();
+        let conn = &mut match connect() {
+            Ok(conn) => conn,
+            Err(e) => {
+                println!("Error connecting to database: {:?}", e);
+                return;
+            }
+        };
 
-        let actuator = actuators::table
+        let actuator = match actuators::table
             .filter(id.eq(actuator_id))
-            .get_result::<Actuator>(conn);
-
-        match actuator {
-            Ok(_) => {}
+            .get_result::<Actuator>(conn)
+        {
+            Ok(actuator) => actuator,
             Err(_) => {
                 println!("Error loading actuator");
                 return;
             }
-        }
-
-        let actuator = actuator.unwrap();
+        };
 
         let address = "coap://".to_owned()
             + actuator.get_ip_address()
@@ -134,7 +143,13 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         };
 
-        let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Error parsing actuator response");
+                return;
+            }
+        };
 
         if payload == "ON-PULSE" {
             let mut uas = UpdateActuatorState::new(actuator_id, true);
@@ -247,21 +262,24 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(TOGGLE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
         let actuator_id = data.0;
 
-        let conn = &mut connect().unwrap();
+        let conn = &mut match connect() {
+            Ok(conn) => conn,
+            Err(e) => {
+                println!("Error connecting to database: {:?}", e);
+                return;
+            }
+        };
 
-        let actuator = actuators::table
+        let actuator = match actuators::table
             .filter(id.eq(actuator_id))
-            .get_result::<Actuator>(conn);
-
-        match actuator {
-            Ok(_) => {}
+            .get_result::<Actuator>(conn)
+        {
+            Ok(actuator) => actuator,
             Err(_) => {
                 println!("Error loading actuator");
                 return;
             }
-        }
-
-        let actuator = actuator.unwrap();
+        };
 
         let address = "coap://".to_owned()
             + actuator.get_ip_address()
@@ -276,7 +294,13 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         };
 
-        let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Error parsing actuator response");
+                return;
+            }
+        };
 
         let b = if payload == "ON" || payload == "ON-PULSE" {
             b"OFF".to_vec()
@@ -292,7 +316,13 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         };
 
-        let payload = String::from_utf8(response_actuator.message.payload.clone()).unwrap();
+        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Error parsing actuator response");
+                return;
+            }
+        };
 
         if payload == "ON" || payload == "OFF" || payload == "ON-PULSE" {
             let mut uas = UpdateActuatorState::new(actuator_id, payload.contains("ON"));

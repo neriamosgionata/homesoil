@@ -42,12 +42,14 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
         }
     }
 
-    let sensor = actuators::table
+    let actuator = actuators::table
         .filter(ip_address.like(&new_actuator.get_ip_address()))
+        .filter(port.eq(&new_actuator.get_port()))
+        .filter(pulse.eq(&new_actuator.get_pulse()))
         .get_result(conn);
 
-    match sensor {
-        Ok(sensor) => Ok(sensor),
+    match actuator {
+        Ok(actuator) => Ok(actuator),
         Err(e) => Err(Error::from(e)),
     }
 }
@@ -80,14 +82,14 @@ pub fn unregister_actuator(payload: String) -> Result<Actuator> {
 pub fn change_actuator_name(payload: String) -> Result<Actuator> {
     let conn = &mut connect()?;
 
-    let mut update_sensor_name = from_str::<UpdateActuatorName>(&payload)?;
+    let mut update_actuator_name = from_str::<UpdateActuatorName>(&payload)?;
 
-    update_sensor_name.set_updated_at(chrono::Local::now().naive_local());
+    update_actuator_name.set_updated_at(chrono::Local::now().naive_local());
 
-    let res = update(actuators::table.find(update_sensor_name.get_id()))
+    let res = update(actuators::table.find(update_actuator_name.get_id()))
         .set((
-            name.eq(update_sensor_name.get_name()),
-            updated_at.eq(update_sensor_name.get_updated_at()),
+            name.eq(update_actuator_name.get_name()),
+            updated_at.eq(update_actuator_name.get_updated_at()),
         ))
         .execute(conn);
 
@@ -98,12 +100,12 @@ pub fn change_actuator_name(payload: String) -> Result<Actuator> {
         }
     }
 
-    let sensor = actuators::table
-        .filter(id.eq(update_sensor_name.get_id()))
+    let actuator = actuators::table
+        .filter(id.eq(update_actuator_name.get_id()))
         .get_result(conn);
 
-    match sensor {
-        Ok(sensor) => Ok(sensor),
+    match actuator {
+        Ok(actuator) => Ok(actuator),
         Err(e) => Err(Error::from(e)),
     }
 }
@@ -129,12 +131,12 @@ pub fn change_actuator_state(payload: String) -> Result<Actuator> {
         }
     }
 
-    let sensor = actuators::table
+    let actuator = actuators::table
         .filter(id.eq(update_actuator_state.get_id()))
         .get_result(conn);
 
-    match sensor {
-        Ok(sensor) => Ok(sensor),
+    match actuator {
+        Ok(actuator) => Ok(actuator),
         Err(e) => Err(Error::from(e)),
     }
 }
