@@ -51,9 +51,4 @@ diesel::table! {
 
 diesel::joinable!(sensor_reads -> sensors (sensor_id));
 
-diesel::allow_tables_to_appear_in_same_query!(
-    actuators,
-    scripts,
-    sensor_reads,
-    sensors,
-);
+diesel::allow_tables_to_appear_in_same_query!(actuators, scripts, sensor_reads, sensors,);
