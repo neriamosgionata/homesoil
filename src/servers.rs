@@ -1,8 +1,10 @@
 use crate::actuator_handlers::ping_actuator;
 use crate::actuator_methods::get_all_registered_actuators;
 use crate::events::{
-    register_all_callbacks, ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT, ALL_SENSORS_EVENT,
+    register_all_callbacks, ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT,
+    ALL_SENSORS_EVENT, ALL_FLOWS_EVENT,
 };
+use crate::flow_methods::get_flows;
 use crate::handlers::path_handler;
 use crate::sensor_handlers::ping_sensor;
 use crate::sensor_methods::{get_all_last_sensor_readings, get_all_registered_sensors};
@@ -74,6 +76,15 @@ pub async fn run_socket_server(address: &'static str) -> Result<SocketIo> {
                 ALL_ACTUATORS_EVENT,
                 json!({
                     "actuators": actuators,
+                }),
+            );
+        }
+
+        if let Ok(flows) = get_flows() {
+            let _: Result<_, _> = socket.emit(
+                ALL_FLOWS_EVENT,
+                json!({
+                    "flows": flows,
                 }),
             );
         }

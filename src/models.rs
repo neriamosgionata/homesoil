@@ -882,3 +882,150 @@ impl RemoveSchedule {
         self.updated_at = Some(updated_at);
     }
 }
+
+//FLOWS
+
+#[derive(
+    Debug,
+    Clone,
+    Queryable,
+    Selectable,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Identifiable,
+    QueryableByName,
+)]
+#[diesel(table_name = crate::schema::flows)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct Flow {
+    id: i32,
+    title: String,
+    graph: String,
+    enabled: bool,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl Flow {
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn get_graph(&self) -> &str {
+        &self.graph
+    }
+
+    pub fn get_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn get_created_at(&self) -> &chrono::NaiveDateTime {
+        &self.created_at
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::flows)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewFlow {
+    title: String,
+    graph: String,
+    enabled: bool,
+    created_at: chrono::NaiveDateTime,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl NewFlow {
+    pub fn new(title: &str, graph: &str) -> Self {
+        Self {
+            title: title.to_string(),
+            graph: graph.to_string(),
+            enabled: false,
+            created_at: chrono::Local::now().naive_local(),
+            updated_at: None,
+        }
+    }
+
+    pub fn get_title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn get_graph(&self) -> &str {
+        &self.graph
+    }
+
+    pub fn get_enabled(&self) -> bool {
+        self.enabled
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UpdateFlow {
+    id: i32,
+    title: String,
+    graph: String,
+    enabled: bool,
+    updated_at: Option<chrono::NaiveDateTime>,
+}
+
+impl UpdateFlow {
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn get_graph(&self) -> &str {
+        &self.graph
+    }
+
+    pub fn get_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn get_updated_at(&self) -> &Option<chrono::NaiveDateTime> {
+        &self.updated_at
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: chrono::NaiveDateTime) {
+        self.updated_at = Some(updated_at);
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct DeleteFlow {
+    id: i32,
+}
+
+impl DeleteFlow {
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ToggleFlow {
+    id: i32,
+    enabled: bool,
+}
+
+impl ToggleFlow {
+    pub fn get_id(&self) -> i32 {
+        self.id
+    }
+
+    pub fn get_enabled(&self) -> bool {
+        self.enabled
+    }
+}

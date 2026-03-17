@@ -15,6 +15,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    flows (id) {
+        id -> Integer,
+        title -> Text,
+        graph -> Text,
+        enabled -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
     scripts (id) {
         id -> Integer,
         title -> Text,
@@ -51,4 +62,4 @@ diesel::table! {
 
 diesel::joinable!(sensor_reads -> sensors (sensor_id));
 
-diesel::allow_tables_to_appear_in_same_query!(actuators, scripts, sensor_reads, sensors,);
+diesel::allow_tables_to_appear_in_same_query!(actuators, flows, scripts, sensor_reads, sensors,);

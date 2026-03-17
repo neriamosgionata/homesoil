@@ -3,6 +3,7 @@ use crate::events::{
     SENSOR_CHANGE_ONLINE_EVENT, SENSOR_NAME_CHANGE_EVENT, SENSOR_READ_EVENT, SENSOR_REGISTER_EVENT,
     SENSOR_UNREGISTER_EVENT,
 };
+use crate::flow_engine::evaluate_flows_for_sensor;
 use crate::models::Sensor;
 use crate::schema::sensors;
 use crate::schema::sensors::{online, updated_at};
@@ -189,6 +190,12 @@ pub fn sensor_read_handler<'a>(
                         }
                     }
                 }
+
+                evaluate_flows_for_sensor(
+                    sensor_read.get_sensor_id(),
+                    sensor_read.get_sensor_value(),
+                    socket,
+                );
 
                 "OK".to_string()
             }

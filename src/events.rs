@@ -1,7 +1,8 @@
 use crate::actuator_methods::{change_actuator_name, unregister_actuator};
 use crate::db::connect;
+use crate::flow_methods::{delete_flow, save_new_flow, toggle_flow, update_flow};
 use crate::helper::{send_message_to_dashboard, DashboardMessageType};
-use crate::models::{Actuator, GetSensorReadings, UpdateActuatorState};
+use crate::models::{Actuator, GetSensorReadings, ToggleFlow, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
 use crate::script_methods::{delete_script, get_scripts, save_new_script, update_script};
@@ -68,6 +69,17 @@ pub const SCRIPT_MODIFIED_EVENT: &str = "script-modified";
 pub const SCRIPT_STATUS_CHANGE_EVENT: &str = "script-status-change";
 pub const SCRIPT_SCHEDULE_ADDED_EVENT: &str = "script-schedule-added";
 pub const SCRIPT_SCHEDULE_REMOVED_EVENT: &str = "script-schedule-removed";
+
+//FLOWS
+pub const ALL_FLOWS_EVENT: &str = "all-flows";
+pub const ADD_FLOW_EVENT: &str = "add-flow";
+pub const MODIFY_FLOW_EVENT: &str = "modify-flow";
+pub const REMOVE_FLOW_EVENT: &str = "remove-flow";
+pub const TOGGLE_FLOW_EVENT: &str = "toggle-flow";
+pub const FLOW_SAVED_EVENT: &str = "flow-saved";
+pub const FLOW_MODIFIED_EVENT: &str = "flow-modified";
+pub const FLOW_DELETED_EVENT: &str = "flow-deleted";
+pub const FLOW_TOGGLED_EVENT: &str = "flow-toggled";
 
 pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(
@@ -484,59 +496,21 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
         match unregister_actuator(payload) {
             Ok(actuator) => {
-                match s.broadcast().emit(
+                let _ = s.emit(
                     ACTUATOR_UNREGISTER_EVENT,
-                    json!({
-                           "actuator_id": actuator.get_id(),
-                    }),
-                ) {
-                    Ok(_) => {
-                        match s.emit(
-                            ACTUATOR_UNREGISTER_EVENT,
-                            json!({
-                                   "actuator_id": actuator.get_id(),
-                            }),
-                        ) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Error emitting actuator unregister event: {:?}", e);
-                            }
-                        }
-
-                        match s.broadcast().emit(
-                            ACTUATOR_UNREGISTER_EVENT,
-                            json!({
-                                   "actuator_id": actuator.get_id(),
-                            }),
-                        ) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!(
-                                    "Error emitting actuator unregister event broadcast: {:?}",
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!(
-                            "Error emitting actuator unregister event broadcast: {:?}",
-                            e
-                        );
-                    }
-                }
+                    json!({ "actuator_id": actuator.get_id() }),
+                );
+                let _ = s.broadcast().emit(
+                    ACTUATOR_UNREGISTER_EVENT,
+                    json!({ "actuator_id": actuator.get_id() }),
+                );
             }
             Err(e) => {
-                match send_message_to_dashboard(
+                let _ = send_message_to_dashboard(
                     &s,
-                    format!("Error unregistering actuator: {:?}", e).to_string(),
+                    format!("Error unregistering actuator: {:?}", e),
                     DashboardMessageType::Error,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
-                    }
-                };
+                );
             }
         }
     });
@@ -546,56 +520,21 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
         match unregister_sensor(payload) {
             Ok(sensor) => {
-                match s.broadcast().emit(
+                let _ = s.emit(
                     SENSOR_UNREGISTER_EVENT,
-                    json!({
-                           "sensor_id": sensor.get_id(),
-                    }),
-                ) {
-                    Ok(_) => {
-                        match s.emit(
-                            SENSOR_UNREGISTER_EVENT,
-                            json!({
-                                   "sensor_id": sensor.get_id(),
-                            }),
-                        ) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Error emitting sensor unregister event: {:?}", e);
-                            }
-                        }
-
-                        match s.broadcast().emit(
-                            SENSOR_UNREGISTER_EVENT,
-                            json!({
-                                   "sensor_id": sensor.get_id(),
-                            }),
-                        ) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!(
-                                    "Error emitting sensor unregister event broadcast: {:?}",
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error emitting sensor unregister event broadcast: {:?}", e);
-                    }
-                }
+                    json!({ "sensor_id": sensor.get_id() }),
+                );
+                let _ = s.broadcast().emit(
+                    SENSOR_UNREGISTER_EVENT,
+                    json!({ "sensor_id": sensor.get_id() }),
+                );
             }
             Err(e) => {
-                match send_message_to_dashboard(
+                let _ = send_message_to_dashboard(
                     &s,
-                    format!("Error unregistering sensor: {:?}", e).to_string(),
+                    format!("Error unregistering sensor: {:?}", e),
                     DashboardMessageType::Error,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
-                    }
-                };
+                );
             }
         }
     });
@@ -605,13 +544,6 @@ pub fn register_all_callbacks(socket: &SocketRef) {
 
         if let Ok(scripts) = all_scripts {
             let _: Result<(), _> = s.emit(
-                ALL_SCRIPTS_EVENT,
-                json!({
-                       "scripts_array": scripts,
-                }),
-            );
-
-            let _: Result<(), _> = s.broadcast().emit(
                 ALL_SCRIPTS_EVENT,
                 json!({
                        "scripts_array": scripts,
@@ -946,4 +878,90 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }
         },
     );
+
+    // FLOW EVENTS
+
+    socket.on(ADD_FLOW_EVENT, |s: SocketRef, data: Data<String>| {
+        let payload = data.0;
+
+        match save_new_flow(payload) {
+            Ok(flow) => {
+                let _ = s.emit(FLOW_SAVED_EVENT, json!({ "flow": flow }));
+                let _ = s.broadcast().emit(FLOW_SAVED_EVENT, json!({ "flow": flow }));
+            }
+            Err(e) => {
+                let _ = send_message_to_dashboard(
+                    &s,
+                    format!("Error adding flow: {:?}", e),
+                    DashboardMessageType::Error,
+                );
+            }
+        }
+    });
+
+    socket.on(MODIFY_FLOW_EVENT, |s: SocketRef, data: Data<String>| {
+        let payload = data.0;
+
+        match update_flow(payload) {
+            Ok(flow) => {
+                let _ = s.emit(FLOW_MODIFIED_EVENT, json!({ "flow": flow }));
+                let _ = s.broadcast().emit(FLOW_MODIFIED_EVENT, json!({ "flow": flow }));
+            }
+            Err(e) => {
+                let _ = send_message_to_dashboard(
+                    &s,
+                    format!("Error updating flow: {:?}", e),
+                    DashboardMessageType::Error,
+                );
+            }
+        }
+    });
+
+    socket.on(REMOVE_FLOW_EVENT, |s: SocketRef, data: Data<i32>| {
+        let flow_id = data.0;
+
+        match delete_flow(flow_id) {
+            Ok(_) => {
+                let _ = s.emit(FLOW_DELETED_EVENT, json!({ "flow_id": flow_id }));
+                let _ = s.broadcast().emit(FLOW_DELETED_EVENT, json!({ "flow_id": flow_id }));
+            }
+            Err(e) => {
+                let _ = send_message_to_dashboard(
+                    &s,
+                    format!("Error deleting flow: {:?}", e),
+                    DashboardMessageType::Error,
+                );
+            }
+        }
+    });
+
+    socket.on(TOGGLE_FLOW_EVENT, |s: SocketRef, data: Data<String>| {
+        let payload = data.0;
+
+        let toggle_data: ToggleFlow = match serde_json::from_str(&payload) {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = send_message_to_dashboard(
+                    &s,
+                    format!("Error parsing toggle flow: {:?}", e),
+                    DashboardMessageType::Error,
+                );
+                return;
+            }
+        };
+
+        match toggle_flow(toggle_data.get_id(), toggle_data.get_enabled()) {
+            Ok(flow) => {
+                let _ = s.emit(FLOW_TOGGLED_EVENT, json!({ "flow": flow }));
+                let _ = s.broadcast().emit(FLOW_TOGGLED_EVENT, json!({ "flow": flow }));
+            }
+            Err(e) => {
+                let _ = send_message_to_dashboard(
+                    &s,
+                    format!("Error toggling flow: {:?}", e),
+                    DashboardMessageType::Error,
+                );
+            }
+        }
+    });
 }
