@@ -11,6 +11,9 @@ diesel::table! {
         pulse -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
+        intermittent -> Bool,
+        intermittent_on_ms -> Integer,
+        intermittent_off_ms -> Integer,
     }
 }
 
@@ -60,6 +63,21 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    session_tokens (id) {
+        id -> Integer,
+        token -> Text,
+        created_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(sensor_reads -> sensors (sensor_id));
 
-diesel::allow_tables_to_appear_in_same_query!(actuators, flows, scripts, sensor_reads, sensors,);
+diesel::allow_tables_to_appear_in_same_query!(
+    actuators,
+    flows,
+    scripts,
+    sensor_reads,
+    sensors,
+    session_tokens,
+);

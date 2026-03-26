@@ -194,6 +194,9 @@ pub struct Actuator {
     pulse: bool,
     created_at: chrono::NaiveDateTime,
     updated_at: Option<chrono::NaiveDateTime>,
+    intermittent: bool,
+    intermittent_on_ms: i32,
+    intermittent_off_ms: i32,
 }
 
 impl Actuator {
@@ -208,6 +211,9 @@ impl Actuator {
             pulse: false,
             created_at: chrono::Local::now().naive_local(),
             updated_at: None,
+            intermittent: false,
+            intermittent_on_ms: 1000,
+            intermittent_off_ms: 1000,
         }
     }
 
@@ -281,6 +287,30 @@ impl Actuator {
 
     pub fn get_pulse(&self) -> bool {
         self.pulse
+    }
+
+    pub fn set_intermittent(&mut self, intermittent: bool) {
+        self.intermittent = intermittent;
+    }
+
+    pub fn get_intermittent(&self) -> bool {
+        self.intermittent
+    }
+
+    pub fn set_intermittent_on_ms(&mut self, on_ms: i32) {
+        self.intermittent_on_ms = on_ms;
+    }
+
+    pub fn get_intermittent_on_ms(&self) -> i32 {
+        self.intermittent_on_ms
+    }
+
+    pub fn set_intermittent_off_ms(&mut self, off_ms: i32) {
+        self.intermittent_off_ms = off_ms;
+    }
+
+    pub fn get_intermittent_off_ms(&self) -> i32 {
+        self.intermittent_off_ms
     }
 }
 
@@ -474,6 +504,9 @@ pub struct NewActuator {
     state: bool,
     pulse: bool,
     created_at: Option<chrono::NaiveDateTime>,
+    intermittent: bool,
+    intermittent_on_ms: i32,
+    intermittent_off_ms: i32,
 }
 
 impl NewActuator {
@@ -486,6 +519,9 @@ impl NewActuator {
             state: false,
             pulse: false,
             created_at: None,
+            intermittent: false,
+            intermittent_on_ms: 1000,
+            intermittent_off_ms: 1000,
         }
     }
 
@@ -543,6 +579,30 @@ impl NewActuator {
 
     pub fn get_pulse(&self) -> bool {
         self.pulse
+    }
+
+    pub fn set_intermittent(&mut self, intermittent: bool) {
+        self.intermittent = intermittent;
+    }
+
+    pub fn get_intermittent(&self) -> bool {
+        self.intermittent
+    }
+
+    pub fn set_intermittent_on_ms(&mut self, on_ms: i32) {
+        self.intermittent_on_ms = on_ms;
+    }
+
+    pub fn get_intermittent_on_ms(&self) -> i32 {
+        self.intermittent_on_ms
+    }
+
+    pub fn set_intermittent_off_ms(&mut self, off_ms: i32) {
+        self.intermittent_off_ms = off_ms;
+    }
+
+    pub fn get_intermittent_off_ms(&self) -> i32 {
+        self.intermittent_off_ms
     }
 }
 

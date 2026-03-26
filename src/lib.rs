@@ -36,5 +36,6 @@ pub mod auth;
 pub mod flow_engine;
 pub mod flow_methods;
 pub mod helper;
+pub mod intermittent;
 pub mod script_methods;
 

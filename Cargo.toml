@@ -28,3 +28,4 @@ axum-util = "0.2.2"
 chrono = "0.4.31"
 diesel = { version = "2.1.4", features = ["chrono", "sqlite"] }
 local-ip-address = "0.5.6"
+rand = "0.8.5"

@@ -1,5 +1,6 @@
 use crate::actuator_handlers::send_message_to_actuator;
 use crate::condition_parser::parse_condition;
+use crate::intermittent::{start_intermittent, stop_intermittent};
 use crate::helper::{send_message_to_dashboard, DashboardMessageType};
 use crate::script_methods::get_script;
 use crate::sensor_handlers::send_message_to_sensor;
@@ -29,6 +30,9 @@ const COMMAND_SUBTRACT_FROM_VARIABLE: Command = "SUBTRACT";
 const COMMAND_MULTIPLY_VARIABLE: Command = "MULTIPLY";
 const COMMAND_DIVIDE_VARIABLE: Command = "DIVIDE";
 const COMMAND_MODULO_VARIABLE: Command = "MODULO";
+
+const COMMAND_INTERMITTENT_ACTUATOR: Command = "INTERMITTENT";
+const COMMAND_STOP_INTERMITTENT_ACTUATOR: Command = "STOP_INTERMITTENT";
 
 const COMMAND_DELAY: Command = "DELAY";
 
@@ -486,6 +490,62 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             CommandFunctionResult::Continue
         }),
+        COMMAND_INTERMITTENT_ACTUATOR => Box::new(|args, _variables, _socket| {
+            println!("Intermittent actuator: {:?}", args);
+
+            match args_required(args, 3) {
+                Ok(_) => {}
+                Err(e) => {
+                    return CommandFunctionResult::Error(e.to_string());
+                }
+            }
+
+            let args = args.clone().unwrap();
+
+            let actuator_id = match args[0] {
+                Value::Int32(s) => s,
+                _ => {
+                    return CommandFunctionResult::Error("Invalid actuator id".to_string());
+                }
+            };
+
+            let on_ms = match args[1] {
+                Value::Int32(s) => s,
+                _ => {
+                    return CommandFunctionResult::Error("Invalid on_ms value".to_string());
+                }
+            };
+
+            let off_ms = match args[2] {
+                Value::Int32(s) => s,
+                _ => {
+                    return CommandFunctionResult::Error("Invalid off_ms value".to_string());
+                }
+            };
+
+            start_intermittent(actuator_id, on_ms, off_ms);
+            CommandFunctionResult::Continue
+        }),
+        COMMAND_STOP_INTERMITTENT_ACTUATOR => Box::new(|args, _variables, _socket| {
+            println!("Stop intermittent actuator: {:?}", args);
+
+            match args_required(args, 1) {
+                Ok(_) => {}
+                Err(e) => {
+                    return CommandFunctionResult::Error(e.to_string());
+                }
+            }
+
+            let actuator_id = match args.clone().unwrap()[0] {
+                Value::Int32(s) => s,
+                _ => {
+                    return CommandFunctionResult::Error("Invalid actuator id".to_string());
+                }
+            };
+
+            stop_intermittent(actuator_id);
+            CommandFunctionResult::Continue
+        }),
         COMMAND_DELAY => Box::new(|args, variables, _socket| {
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -748,6 +808,8 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
         COMMAND_MULTIPLY_VARIABLE => COMMAND_MULTIPLY_VARIABLE,
         COMMAND_DIVIDE_VARIABLE => COMMAND_DIVIDE_VARIABLE,
         COMMAND_MODULO_VARIABLE => COMMAND_MODULO_VARIABLE,
+        COMMAND_INTERMITTENT_ACTUATOR => COMMAND_INTERMITTENT_ACTUATOR,
+        COMMAND_STOP_INTERMITTENT_ACTUATOR => COMMAND_STOP_INTERMITTENT_ACTUATOR,
         COMMAND_DELAY => COMMAND_DELAY,
         _ => {
             return Err(anyhow!("Unknown command: {}", s));

@@ -1,6 +1,7 @@
 use crate::actuator_methods::{change_actuator_name, unregister_actuator};
 use crate::db::connect;
 use crate::flow_methods::{delete_flow, save_new_flow, toggle_flow, update_flow};
+use crate::intermittent::{start_intermittent, stop_intermittent};
 use crate::helper::{send_message_to_dashboard, DashboardMessageType};
 use crate::models::{Actuator, GetSensorReadings, ToggleFlow, UpdateActuatorState};
 use crate::schema::actuators;
@@ -47,7 +48,11 @@ pub const PULSE_ACTUATOR_EVENT: &str = "pulse-actuator";
 pub const ACTUATOR_NAME_CHANGE_EVENT: &str = "actuator-name-change";
 pub const ACTUATOR_STATE_CHANGE_EVENT: &str = "actuator-state-change";
 
+pub const INTERMITTENT_ACTUATOR_EVENT: &str = "intermittent-actuator";
+pub const STOP_INTERMITTENT_ACTUATOR_EVENT: &str = "stop-intermittent-actuator";
+
 pub const ACTUATOR_CHANGE_ONLINE_EVENT: &str = "actuator-change-online";
+pub const ACTUATOR_INTERMITTENT_CHANGE_EVENT: &str = "actuator-intermittent-change";
 
 pub const RENAME_ACTUATOR_EVENT: &str = "rename-actuator";
 
@@ -274,6 +279,9 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(TOGGLE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
         let actuator_id = data.0;
 
+        // Stop any active intermittent cycling when manually toggling
+        stop_intermittent(actuator_id);
+
         let conn = &mut match connect() {
             Ok(conn) => conn,
             Err(e) => {
@@ -387,6 +395,61 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             println!("Error changing actuator state");
         }
     });
+
+    socket.on(
+        INTERMITTENT_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<String>| {
+            let payload = data.0;
+
+            #[derive(serde::Deserialize)]
+            struct IntermittentData {
+                actuator_id: i32,
+                on_ms: i32,
+                off_ms: i32,
+            }
+
+            let params: IntermittentData = match serde_json::from_str(&payload) {
+                Ok(p) => p,
+                Err(e) => {
+                    println!("Error parsing intermittent data: {:?}", e);
+                    return;
+                }
+            };
+
+            start_intermittent(params.actuator_id, params.on_ms, params.off_ms);
+
+            let now = chrono::Local::now().naive_local();
+            let payload = json!({
+                "actuator_id": params.actuator_id,
+                "intermittent": true,
+                "intermittent_on_ms": params.on_ms,
+                "intermittent_off_ms": params.off_ms,
+                "updated_at": now,
+            });
+
+            let _ = s.emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
+            let _ = s.broadcast().emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
+        },
+    );
+
+    socket.on(
+        STOP_INTERMITTENT_ACTUATOR_EVENT,
+        |s: SocketRef, data: Data<i32>| {
+            let actuator_id = data.0;
+
+            stop_intermittent(actuator_id);
+
+            let now = chrono::Local::now().naive_local();
+            let payload = json!({
+                "actuator_id": actuator_id,
+                "intermittent": false,
+                "updated_at": now,
+            });
+
+            let _ = s.emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
+            let _ = s.broadcast().emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
+        },
+    );
 
     socket.on(RENAME_SENSOR_EVENT, |s: SocketRef, data: Data<String>| {
         let payload = data.0;

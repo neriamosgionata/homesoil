@@ -1,9 +1,14 @@
 use crate::actuator_handlers::ping_actuator;
 use crate::actuator_methods::get_all_registered_actuators;
+use crate::auth::{
+    check_rate_limit, clear_failed_attempts, generate_session_token, is_valid_session_token,
+    record_failed_attempt, save_session_token,
+};
 use crate::events::{
     register_all_callbacks, ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT,
     ALL_SENSORS_EVENT, ALL_FLOWS_EVENT,
 };
+use crate::intermittent::set_socket_io;
 use crate::flow_methods::get_flows;
 use crate::handlers::path_handler;
 use crate::sensor_handlers::ping_sensor;
@@ -26,26 +31,60 @@ use tokio::runtime::Runtime;
 
 #[derive(Debug, Deserialize)]
 struct AuthData {
+    #[serde(default)]
     token: String,
+    #[serde(default)]
+    pin: String,
 }
 
-pub async fn run_socket_server(address: &'static str) -> Result<SocketIo> {
+pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
         .connect_timeout(Duration::from_secs(30))
         .req_path("/socket.io")
         .transports([TransportType::Websocket, TransportType::Polling])
         .build_layer();
 
-    io.ns("/", move |socket: SocketRef, Data(auth): Data<AuthData>| {
-        let login_token = std::env::var("LOGIN_TOKEN").expect("LOGIN_TOKEN must be set");
+    set_socket_io(io.clone());
 
-        if auth.token.is_empty() || auth.token != login_token {
-            println!("Invalid token, disconnecting socket : {:?}", socket.id);
+    io.ns("/", move |socket: SocketRef, Data(auth): Data<AuthData>| {
+        let socket_id = format!("{:?}", socket.id);
+
+        if !auth.pin.is_empty() && !check_rate_limit(&socket_id) {
+            println!("Rate limited, disconnecting socket: {}", socket_id);
             socket.disconnect().ok();
             return;
         }
 
-        println!("Socket connected : {:?}", socket.id);
+        let authenticated = if !auth.token.is_empty() {
+            is_valid_session_token(&auth.token)
+        } else if !auth.pin.is_empty() {
+            auth.pin == pin
+        } else {
+            false
+        };
+
+        if !authenticated {
+            if !auth.pin.is_empty() {
+                record_failed_attempt(&socket_id);
+                println!("Invalid PIN attempt from socket: {}", socket_id);
+            } else {
+                println!("Invalid credentials, disconnecting socket: {}", socket_id);
+            }
+            socket.disconnect().ok();
+            return;
+        }
+
+        if !auth.pin.is_empty() {
+            clear_failed_attempts(&socket_id);
+            let session_token = generate_session_token();
+            if save_session_token(&session_token) {
+                let _: std::result::Result<_, _> =
+                    socket.emit("session_token", json!({ "token": session_token }));
+                println!("New device paired via PIN: {}", socket_id);
+            }
+        }
+
+        println!("Socket connected: {}", socket_id);
 
         register_all_callbacks(&socket);
 
@@ -137,36 +176,107 @@ pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
     })
 }
 
-pub async fn run_coap_server(address: &'static str, socket: &SocketIo) {
+pub async fn run_coap_server(
+    bind_address: &'static str,
+    actual_ip: &'static str,
+    coap_port: u16,
+    device_secret: &'static str,
+    socket: &SocketIo,
+) {
     let boxed_socket = Arc::new(socket.clone());
 
     spawn(move || {
-        println!("Starting CoAP server on {}", address);
+        println!("Starting CoAP server on {}", bind_address);
 
         Runtime::new()
             .expect("Failed to create Tokio runtime")
             .block_on(async {
-                let mut server = Server::new(address).unwrap();
+                let mut server = Server::new(bind_address).unwrap();
+                server.enable_all_coap(0);
+
+                let discovery_payload = format!(
+                    r#"{{"ip":"{}","coap_port":{}}}"#,
+                    actual_ip, coap_port
+                );
 
                 server
-                    .run(|request| async {
-                        let request_ref = &request;
+                    .run(move |request| {
+                        let discovery_payload = discovery_payload.clone();
+                        let boxed_socket = boxed_socket.clone();
+                        async move {
+                            let request_ref = &request;
 
-                        let payload = path_handler(boxed_socket.as_ref(), request_ref).await;
-
-                        match request.response {
-                            Some(mut message) => {
-                                match payload {
-                                    Some(payload) => {
-                                        message.message.payload = payload.as_bytes().to_vec();
+                            let path = format!("{}{}", "/", request_ref.get_path());
+                            if path == "/.well-known/core" {
+                                return match request.response {
+                                    Some(mut message) => {
+                                        message.message.payload =
+                                            discovery_payload.as_bytes().to_vec();
+                                        Some(message)
                                     }
-                                    None => {
-                                        message.message.payload = b"Error".to_vec();
-                                    }
-                                }
-                                Some(message)
+                                    _ => None,
+                                };
                             }
-                            _ => None,
+
+                            // Validate device secret from JSON payload
+                            if let Ok(body) =
+                                String::from_utf8(request_ref.message.payload.clone())
+                            {
+                                if let Ok(parsed) =
+                                    serde_json::from_str::<serde_json::Value>(&body)
+                                {
+                                    let secret = parsed
+                                        .get("device_secret")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    if secret != device_secret {
+                                        println!(
+                                            "Rejected CoAP request to {} — invalid device_secret",
+                                            path
+                                        );
+                                        return match request.response {
+                                            Some(mut message) => {
+                                                message.message.payload =
+                                                    b"Unauthorized".to_vec();
+                                                Some(message)
+                                            }
+                                            _ => None,
+                                        };
+                                    }
+                                } else {
+                                    println!(
+                                        "Rejected CoAP request to {} — invalid payload",
+                                        path
+                                    );
+                                    return match request.response {
+                                        Some(mut message) => {
+                                            message.message.payload =
+                                                b"Unauthorized".to_vec();
+                                            Some(message)
+                                        }
+                                        _ => None,
+                                    };
+                                }
+                            }
+
+                            let payload =
+                                path_handler(boxed_socket.as_ref(), request_ref).await;
+
+                            match request.response {
+                                Some(mut message) => {
+                                    match payload {
+                                        Some(payload) => {
+                                            message.message.payload =
+                                                payload.as_bytes().to_vec();
+                                        }
+                                        None => {
+                                            message.message.payload = b"Error".to_vec();
+                                        }
+                                    }
+                                    Some(message)
+                                }
+                                _ => None,
+                            }
                         }
                     })
                     .await

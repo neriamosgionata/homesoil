@@ -1,5 +1,6 @@
 use anyhow::Result;
 use dotenv::dotenv;
+use homesoil::auth::{generate_device_secret, generate_pin};
 use homesoil::db::connect;
 use homesoil::servers::{
     check_for_old_sensor_reads_records, run_coap_server, run_sensor_health_check, run_socket_server,
@@ -27,17 +28,28 @@ async fn main() -> Result<()> {
         current_ip_address = "127.0.0.1".to_string();
     }
 
-    let socket_port = std::env::var("SOCKET_PORT").unwrap_or("4000".to_string());
-    let coap_port = std::env::var("COAP_PORT").unwrap_or("8683".to_string());
+    let pin = generate_pin();
+    let device_secret = generate_device_secret();
+    println!("========================================");
+    println!("  Pairing PIN:    {}", pin);
+    println!("  Device Secret:  {}", device_secret);
+    println!("========================================");
 
-    let current_ip_address_socket_io = format!("{}:{}", current_ip_address, socket_port);
-    let current_ip_address_coap = format!("{}:{}", current_ip_address, coap_port);
+    let current_ip_address_socket_io = format!("{}:{}", current_ip_address, 4000);
+    let coap_bind_address = format!("0.0.0.0:{}", 5683);
 
-    let io = run_socket_server(String::leak(current_ip_address_socket_io)).await?;
+    let io = run_socket_server(String::leak(current_ip_address_socket_io), String::leak(pin)).await?;
 
     run_sensor_health_check(&io).await;
 
-    run_coap_server(String::leak(current_ip_address_coap), &io).await;
+    run_coap_server(
+        String::leak(coap_bind_address),
+        String::leak(current_ip_address.clone()),
+        5683,
+        String::leak(device_secret),
+        &io,
+    )
+    .await;
 
     check_for_old_sensor_reads_records().await;
 

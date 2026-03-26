@@ -1,4 +1,5 @@
 use crate::flow_methods::get_enabled_flows;
+use crate::intermittent::{start_intermittent, stop_intermittent};
 use crate::models::Flow;
 use crate::schema::actuators;
 use crate::db::connect;
@@ -161,12 +162,36 @@ fn evaluate_flow(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
+            let is_intermittent = node
+                .data
+                .get("intermittent")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
             // Pulse actuators only fire on rising edge (false→true)
             if is_pulse && !new_state {
                 continue;
             }
 
-            send_actuator_command(actuator_id, new_state, is_pulse, socket);
+            if is_intermittent {
+                if new_state {
+                    let on_ms = node
+                        .data
+                        .get("intermittent_on_ms")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(1000) as i32;
+                    let off_ms = node
+                        .data
+                        .get("intermittent_off_ms")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(1000) as i32;
+                    start_intermittent(actuator_id, on_ms, off_ms);
+                } else {
+                    stop_intermittent(actuator_id);
+                }
+            } else {
+                send_actuator_command(actuator_id, new_state, is_pulse, socket);
+            }
         }
     }
 }
