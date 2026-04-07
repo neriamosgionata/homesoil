@@ -8,7 +8,7 @@ use crate::models::Sensor;
 use crate::schema::sensors;
 use crate::schema::sensors::{online, updated_at};
 use crate::sensor_methods::{change_sensor_name, read_sensor, register_sensor, unregister_sensor};
-use crate::CoAPClient;
+use crate::coap_client;
 use anyhow::{Error, Result};
 use coap_lite::{CoapRequest, RequestType};
 use diesel::prelude::*;
@@ -18,6 +18,7 @@ use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
 use std::net::SocketAddr;
+use log::{error, info};
 
 pub fn sensor_register_handler<'a>(
     socket: &'a SocketIo,
@@ -50,7 +51,7 @@ pub fn sensor_register_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor register event: {:?}", e);
+                            error!("Error emitting sensor register event: {:?}", e);
                         }
                     }
                 }
@@ -70,7 +71,7 @@ pub fn sensor_register_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor register event: {:?}", e);
+                            error!("Error emitting sensor register event: {:?}", e);
                         }
                     }
                 }
@@ -78,7 +79,7 @@ pub fn sensor_register_handler<'a>(
                 sensor.get_id().to_string()
             }
             Err(e) => {
-                println!("Error registering sensor: {:?}", e);
+                error!("Error registering sensor: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -111,7 +112,7 @@ pub fn sensor_unregister_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor unregister event: {:?}", e);
+                            error!("Error emitting sensor unregister event: {:?}", e);
                         }
                     }
                 }
@@ -125,7 +126,7 @@ pub fn sensor_unregister_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor unregister event: {:?}", e);
+                            error!("Error emitting sensor unregister event: {:?}", e);
                         }
                     }
                 }
@@ -133,7 +134,7 @@ pub fn sensor_unregister_handler<'a>(
                 sensor.get_id().to_string()
             }
             Err(e) => {
-                println!("Error unregistering sensor: {:?}", e);
+                error!("Error unregistering sensor: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -169,7 +170,7 @@ pub fn sensor_read_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor read event broadcast: {:?}", e);
+                            error!("Error emitting sensor read event broadcast: {:?}", e);
                         }
                     }
                 }
@@ -186,7 +187,7 @@ pub fn sensor_read_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor read event: {:?}", e);
+                            error!("Error emitting sensor read event: {:?}", e);
                         }
                     }
                 }
@@ -200,7 +201,7 @@ pub fn sensor_read_handler<'a>(
                 "OK".to_string()
             }
             Err(e) => {
-                println!("Error reading sensor: {:?}", e);
+                error!("Error reading sensor: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -235,7 +236,7 @@ pub fn sensor_update_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting sensor name changed event broadcast: {:?}",
                                 e
                             );
@@ -254,7 +255,7 @@ pub fn sensor_update_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting sensor name changed event: {:?}", e);
+                            error!("Error emitting sensor name changed event: {:?}", e);
                         }
                     }
                 }
@@ -262,7 +263,7 @@ pub fn sensor_update_handler<'a>(
                 "OK".to_string()
             }
             Err(e) => {
-                println!("Error changing sensor name: {:?}", e);
+                error!("Error changing sensor name: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -271,12 +272,7 @@ pub fn sensor_update_handler<'a>(
 }
 
 pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
-    let address = "coap://".to_owned()
-        + sensor.get_ip_address()
-        + ":"
-        + sensor.get_port().to_string().as_str();
-
-    match CoAPClient::get(&address) {
+    match coap_client::ping_device(sensor.get_ip_address(), sensor.get_port()) {
         Ok(_) => {
             let conn = &mut match connect() {
                 Ok(conn) => conn,
@@ -294,7 +290,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
             match res {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error updating sensor: {:?}", e);
+                    error!("Error updating sensor: {:?}", e);
                     return;
                 }
             }
@@ -310,7 +306,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor online event broadcast: {:?}", e);
+                        error!("Error emitting sensor online event broadcast: {:?}", e);
                     }
                 }
             }
@@ -326,7 +322,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor online event: {:?}", e);
+                        error!("Error emitting sensor online event: {:?}", e);
                     }
                 }
             }
@@ -348,7 +344,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
             match res {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error updating sensor: {:?}", e);
+                    error!("Error updating sensor: {:?}", e);
                     return;
                 }
             }
@@ -364,7 +360,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor online event broadcast: {:?}", e);
+                        error!("Error emitting sensor online event broadcast: {:?}", e);
                     }
                 }
             }
@@ -380,7 +376,7 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor online event: {:?}", e);
+                        error!("Error emitting sensor online event: {:?}", e);
                     }
                 }
             }
@@ -401,20 +397,12 @@ pub fn send_message_to_sensor(sensor_id: i32, message: &String) -> Result<String
         }
     };
 
-    let address = "coap://".to_owned()
-        + sensor.get_ip_address()
-        + ":"
-        + sensor.get_port().to_string().as_str();
-
-    match CoAPClient::post(&address, message.as_bytes().to_vec()) {
-        Ok(res) => {
-            let payload = String::from_utf8(res.message.payload);
-
-            match payload {
-                Ok(payload) => Ok(payload),
-                Err(_) => Err(Error::msg("Error parsing payload")),
-            }
-        }
+    match coap_client::send_actuator_command(
+        sensor.get_ip_address(),
+        sensor.get_port(),
+        message.as_bytes(),
+    ) {
+        Ok(payload) => Ok(payload),
         Err(_) => Err(Error::msg("Error sending message to sensor")),
     }
 }

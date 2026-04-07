@@ -1,7 +1,7 @@
 use crate::db::connect;
 use crate::events::ACTUATOR_STATE_CHANGE_EVENT;
 use crate::schema::actuators;
-use crate::CoAPClient;
+use crate::coap_client;
 use diesel::prelude::*;
 use serde_json::json;
 use socketioxide::SocketIo;
@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
+use log::{error, info};
 
 struct IntermittentHandle {
     stop: Arc<AtomicBool>,
@@ -34,7 +35,7 @@ pub fn start_intermittent(actuator_id: i32, on_ms: i32, off_ms: i32) {
     let socket = match get_socket_io() {
         Some(s) => s.clone(),
         None => {
-            println!("Intermittent: SocketIo not initialized");
+            error!("Intermittent: SocketIo not initialized");
             return;
         }
     };
@@ -64,7 +65,7 @@ pub fn start_intermittent(actuator_id: i32, on_ms: i32, off_ms: i32) {
         ))
         .execute(conn);
 
-    println!(
+    info!(
         "Intermittent started for actuator {} (on={}ms, off={}ms)",
         actuator_id, on_ms, off_ms
     );
@@ -88,7 +89,7 @@ pub fn stop_intermittent(actuator_id: i32) {
             ))
             .execute(conn);
 
-        println!("Intermittent stopped for actuator {}", actuator_id);
+        info!("Intermittent stopped for actuator {}", actuator_id);
     }
 }
 
@@ -146,16 +147,13 @@ fn send_and_update(actuator_id: i32, state: bool, socket: &SocketIo) {
         Err(_) => return,
     };
 
-    let address = format!(
-        "coap://{}:{}",
+    let command: &[u8] = if state { b"ON" } else { b"OFF" };
+
+    if let Ok(payload) = coap_client::send_actuator_command(
         actuator.get_ip_address(),
-        actuator.get_port()
-    );
-
-    let command = if state { b"ON".to_vec() } else { b"OFF".to_vec() };
-
-    if let Ok(response) = CoAPClient::post(&address, command) {
-        let payload = String::from_utf8(response.message.payload).unwrap_or_default();
+        actuator.get_port(),
+        command,
+    ) {
         let new_state = payload == "ON";
 
         let now = chrono::Local::now().naive_local();

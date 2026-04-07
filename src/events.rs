@@ -9,11 +9,34 @@ use crate::schema::actuators::{id, state, updated_at};
 use crate::script_methods::{delete_script, get_scripts, save_new_script, update_script};
 use crate::script_parser::{CommandFunctionResult, Script};
 use crate::sensor_methods::{change_sensor_name, get_sensor_readings, unregister_sensor};
-use crate::CoAPClient;
+use crate::coap_client;
 use diesel::prelude::*;
 use diesel::{update, ExpressionMethods};
+use log::{error, info, warn};
 use serde_json::json;
 use socketioxide::extract::{Data, SocketRef};
+use std::collections::HashMap as StdHashMap;
+use std::sync::{LazyLock, Mutex as StdMutex};
+use std::time::Instant;
+
+/// Actuator command rate limiter: prevents rapid-fire toggle/pulse commands.
+static ACTUATOR_RATE_LIMITER: LazyLock<StdMutex<StdHashMap<i32, Instant>>> =
+    LazyLock::new(|| StdMutex::new(StdHashMap::new()));
+
+/// Check if an actuator command is rate-limited. Returns true if allowed.
+fn check_actuator_rate_limit(actuator_id: i32, min_interval_ms: u64) -> bool {
+    let mut limiter = ACTUATOR_RATE_LIMITER.lock().unwrap();
+    let now = Instant::now();
+
+    if let Some(last) = limiter.get(&actuator_id) {
+        if now.duration_since(*last).as_millis() < min_interval_ms as u128 {
+            return false;
+        }
+    }
+
+    limiter.insert(actuator_id, now);
+    true
+}
 
 //GENERIC
 pub const MESSAGE_SENT_EVENT: &str = "message-sent";
@@ -95,7 +118,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             let gsr = match serde_json::from_str::<GetSensorReadings>(&payload) {
                 Ok(gsr) => gsr,
                 Err(e) => {
-                    println!("Error parsing sensor readings request: {:?}", e);
+                    error!("Error parsing sensor readings request: {:?}", e);
                     return;
                 }
             };
@@ -117,7 +140,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error sending message to dashboard: {:?}", e);
+                            error!("Error sending message to dashboard: {:?}", e);
                         }
                     };
                 }
@@ -128,10 +151,21 @@ pub fn register_all_callbacks(socket: &SocketRef) {
     socket.on(PULSE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
         let actuator_id = data.0;
 
+        // Rate limit: max 1 pulse per 3 seconds
+        if !check_actuator_rate_limit(actuator_id, 3000) {
+            warn!("Pulse rate limited for actuator {}", actuator_id);
+            let _ = send_message_to_dashboard(
+                &s,
+                format!("Actuator {} command rate limited", actuator_id),
+                DashboardMessageType::Warning,
+            );
+            return;
+        }
+
         let conn = &mut match connect() {
             Ok(conn) => conn,
             Err(e) => {
-                println!("Error connecting to database: {:?}", e);
+                error!("Error connecting to database: {:?}", e);
                 return;
             }
         };
@@ -142,28 +176,19 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         {
             Ok(actuator) => actuator,
             Err(_) => {
-                println!("Error loading actuator");
+                error!("Error loading actuator");
                 return;
             }
         };
 
-        let address = "coap://".to_owned()
-            + actuator.get_ip_address()
-            + ":"
-            + actuator.get_port().to_string().as_str();
-
-        let response_actuator = match CoAPClient::post(&address, b"ON-PULSE".to_vec()) {
-            Ok(response) => response,
-            Err(_) => {
-                println!("Error changing actuator state");
-                return;
-            }
-        };
-
-        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+        let payload = match coap_client::send_actuator_command(
+            actuator.get_ip_address(),
+            actuator.get_port(),
+            b"ON-PULSE",
+        ) {
             Ok(p) => p,
             Err(_) => {
-                println!("Error parsing actuator response");
+                error!("Error changing actuator state");
                 return;
             }
         };
@@ -183,7 +208,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             match res {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Error updating actuator");
+                    error!("Error updating actuator");
                     return;
                 }
             }
@@ -198,7 +223,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error emitting actuator state change event: {:?}", e);
+                    error!("Error emitting actuator state change event: {:?}", e);
                 }
             }
 
@@ -212,7 +237,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!(
+                    info!(
                         "Error emitting actuator state change event broadcast: {:?}",
                         e
                     );
@@ -234,7 +259,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             match res {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Error updating actuator");
+                    error!("Error updating actuator");
                     return;
                 }
             }
@@ -249,7 +274,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error emitting actuator state change event: {:?}", e);
+                    error!("Error emitting actuator state change event: {:?}", e);
                 }
             }
 
@@ -263,7 +288,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!(
+                    info!(
                         "Error emitting actuator state change event broadcast: {:?}",
                         e
                     );
@@ -273,11 +298,22 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             return;
         }
 
-        println!("Error changing actuator state");
+        error!("Error changing actuator state");
     });
 
     socket.on(TOGGLE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
         let actuator_id = data.0;
+
+        // Rate limit: max 1 toggle per second
+        if !check_actuator_rate_limit(actuator_id, 1000) {
+            warn!("Toggle rate limited for actuator {}", actuator_id);
+            let _ = send_message_to_dashboard(
+                &s,
+                format!("Actuator {} command rate limited", actuator_id),
+                DashboardMessageType::Warning,
+            );
+            return;
+        }
 
         // Stop any active intermittent cycling when manually toggling
         stop_intermittent(actuator_id);
@@ -285,7 +321,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         let conn = &mut match connect() {
             Ok(conn) => conn,
             Err(e) => {
-                println!("Error connecting to database: {:?}", e);
+                error!("Error connecting to database: {:?}", e);
                 return;
             }
         };
@@ -296,50 +332,36 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         {
             Ok(actuator) => actuator,
             Err(_) => {
-                println!("Error loading actuator");
+                error!("Error loading actuator");
                 return;
             }
         };
 
-        let address = "coap://".to_owned()
-            + actuator.get_ip_address()
-            + ":"
-            + actuator.get_port().to_string().as_str();
-
-        let response_actuator = match CoAPClient::get(&address) {
-            Ok(response) => response,
-            Err(_) => {
-                println!("Error retrieving actuator state");
-                return;
-            }
-        };
-
-        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+        let current_state = match coap_client::ping_device(
+            actuator.get_ip_address(),
+            actuator.get_port(),
+        ) {
             Ok(p) => p,
             Err(_) => {
-                println!("Error parsing actuator response");
+                error!("Error retrieving actuator state");
                 return;
             }
         };
 
-        let b = if payload == "ON" || payload == "ON-PULSE" {
-            b"OFF".to_vec()
+        let command = if current_state == "ON" || current_state == "ON-PULSE" {
+            b"OFF".as_slice()
         } else {
-            b"ON".to_vec()
+            b"ON".as_slice()
         };
 
-        let response_actuator = match CoAPClient::post(&address, b) {
-            Ok(response) => response,
-            Err(_) => {
-                println!("Error changing actuator state");
-                return;
-            }
-        };
-
-        let payload = match String::from_utf8(response_actuator.message.payload.clone()) {
+        let payload = match coap_client::send_actuator_command(
+            actuator.get_ip_address(),
+            actuator.get_port(),
+            command,
+        ) {
             Ok(p) => p,
             Err(_) => {
-                println!("Error parsing actuator response");
+                error!("Error changing actuator state");
                 return;
             }
         };
@@ -359,7 +381,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             match res {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Error updating actuator");
+                    error!("Error updating actuator");
                     return;
                 }
             }
@@ -374,7 +396,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error emitting actuator state change event: {:?}", e);
+                    error!("Error emitting actuator state change event: {:?}", e);
                 }
             }
 
@@ -388,11 +410,11 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error emitting actuator state change event: {:?}", e);
+                    error!("Error emitting actuator state change event: {:?}", e);
                 }
             }
         } else {
-            println!("Error changing actuator state");
+            error!("Error changing actuator state");
         }
     });
 
@@ -411,7 +433,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             let params: IntermittentData = match serde_json::from_str(&payload) {
                 Ok(p) => p,
                 Err(e) => {
-                    println!("Error parsing intermittent data: {:?}", e);
+                    error!("Error parsing intermittent data: {:?}", e);
                     return;
                 }
             };
@@ -468,7 +490,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor name change event: {:?}", e);
+                        error!("Error emitting sensor name change event: {:?}", e);
                     }
                 }
 
@@ -482,7 +504,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting sensor name change event broadcast: {:?}", e);
+                        error!("Error emitting sensor name change event broadcast: {:?}", e);
                     }
                 }
             }
@@ -494,7 +516,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -518,7 +540,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting actuator name change event: {:?}", e);
+                        error!("Error emitting actuator name change event: {:?}", e);
                     }
                 }
 
@@ -532,7 +554,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!(
+                        info!(
                             "Error emitting actuator name change event broadcast: {:?}",
                             e
                         );
@@ -547,7 +569,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -674,7 +696,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error sending message to dashboard: {:?}", e);
+                            error!("Error sending message to dashboard: {:?}", e);
                         }
                     };
                 }
@@ -703,7 +725,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -723,7 +745,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting add script event: {:?}", e);
+                        error!("Error emitting add script event: {:?}", e);
                     }
                 }
 
@@ -735,7 +757,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting add script event broadcast: {:?}", e);
+                        error!("Error emitting add script event broadcast: {:?}", e);
                     }
                 }
             }
@@ -747,7 +769,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -767,7 +789,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting delete script event: {:?}", e);
+                        error!("Error emitting delete script event: {:?}", e);
                     }
                 }
 
@@ -779,7 +801,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting delete script event broadcast: {:?}", e);
+                        error!("Error emitting delete script event broadcast: {:?}", e);
                     }
                 }
             }
@@ -791,7 +813,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -811,7 +833,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting update script event: {:?}", e);
+                        error!("Error emitting update script event: {:?}", e);
                     }
                 }
 
@@ -823,7 +845,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting update script event broadcast: {:?}", e);
+                        error!("Error emitting update script event broadcast: {:?}", e);
                     }
                 }
             }
@@ -835,7 +857,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error sending message to dashboard: {:?}", e);
+                        error!("Error sending message to dashboard: {:?}", e);
                     }
                 };
             }
@@ -857,7 +879,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting add script schedule event: {:?}", e);
+                            error!("Error emitting add script schedule event: {:?}", e);
                         }
                     }
 
@@ -869,7 +891,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting add script schedule event broadcast: {:?}",
                                 e
                             );
@@ -884,7 +906,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error sending message to dashboard: {:?}", e);
+                            error!("Error sending message to dashboard: {:?}", e);
                         }
                     };
                 }
@@ -907,7 +929,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting remove script schedule event: {:?}", e);
+                            error!("Error emitting remove script schedule event: {:?}", e);
                         }
                     }
 
@@ -919,7 +941,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting remove script schedule event broadcast: {:?}",
                                 e
                             );
@@ -934,7 +956,7 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error sending message to dashboard: {:?}", e);
+                            error!("Error sending message to dashboard: {:?}", e);
                         }
                     };
                 }

@@ -65,7 +65,7 @@ Homesoil/
 │   Web Browser    │     │   Android App    │
 │  (SvelteKit 5)   │     │  (Jetpack Comp.) │
 └────────┬─────────┘     └────────┬─────────┘
-         │ Socket.IO (WS)         │ Socket.IO (WS)
+         │ Socket.IO (WS/WSS)     │ Socket.IO (WS/WSS)
          └───────────┬────────────┘
                      │
               ┌──────▼──────────────────────────────┐
@@ -85,14 +85,14 @@ Homesoil/
               │  ┌──────────┐   ┌──────────────────┐ │
               │  │   CoAP   │   │  Flow Engine +   │ │
               │  │  Server   │   │  Script Parser   │ │
-              │  │  :5683    │   │                  │ │
+              │  │:5683/DTLS │   │                  │ │
               │  └──────────┘   └──────────────────┘ │
               │                                       │
               │  ┌──────────────────────────────────┐ │
               │  │    SQLite (Diesel ORM)           │ │
               │  └──────────────────────────────────┘ │
               └──────────────┬──────────────────────┘
-                             │ CoAP (UDP)
+                             │ CoAP (UDP / DTLS)
               ┌──────────────┼──────────────┐
               │              │              │
        ┌──────▼──────┐ ┌────▼─────┐ ┌──────▼──────┐
@@ -151,9 +151,12 @@ homesoil/
 │   ├── servers.rs             # Socket.IO + health check setup
 │   ├── server.rs              # CoAP server implementation
 │   ├── client.rs              # CoAP client (device commands)
+│   ├── coap_client.rs         # Centralized CoAP command sender (DTLS-aware)
+│   ├── dtls.rs                # DTLS-PSK server/client wrappers
 │   ├── observer.rs            # CoAP observe pattern
 │   ├── message/mod.rs         # CoAP message codec
 │   ├── handlers.rs            # CoAP request routing
+│   ├── validation.rs          # Input validation (IP, port, payload size, sensor values)
 │   ├── events.rs              # Socket.IO event system (~1,030 lines)
 │   ├── sensor_methods.rs      # Sensor CRUD
 │   ├── sensor_handlers.rs     # Sensor event→CoAP bridge
@@ -195,17 +198,24 @@ homesoil/
 | `regex` | 1.10.2 | Pattern matching |
 | `lru_time_cache` | 0.11.11 | Block transfer cache |
 | `local-ip-address` | 0.5.6 | Network IP detection |
+| `openssl` | 0.10 | DTLS-PSK for CoAP encryption |
+| `sha2` | 0.10 | SHA-256 session token hashing |
+| `axum-server` | 0.5 (tls-rustls) | TLS support for Socket.IO |
+| `env_logger` | 0.11 | Structured logging |
 
 ### 3.3 Startup Sequence
 
-1. Load `.env` (DATABASE_URL, IS_DEV)
-2. Connect to SQLite database
-3. Generate device credentials: 6-digit PIN + 32-char device secret
-4. Print credentials to console
-5. Start Socket.IO server on `:4000`
-6. Start sensor health check loop (5s interval)
-7. Start CoAP server on `:5683`
-8. Start sensor read cleanup task (1h interval)
+1. Initialize structured logging (`env_logger`)
+2. Load `.env` (DATABASE_URL, IS_DEV)
+3. Connect to SQLite database
+4. Generate device credentials: 8-digit PIN + 32-char device secret
+5. Set PIN creation timestamp (PIN expires after 10 minutes)
+6. Print credentials to console
+7. Start Socket.IO server on `:4000` (with TLS if `TLS_CERT_PATH`/`TLS_KEY_PATH` set)
+8. Start sensor health check loop (5s interval)
+9. Start CoAP server on `:5683`
+10. Start sensor read cleanup task (1h interval)
+11. Start expired session token cleanup thread (1h interval)
 
 ### 3.4 Socket.IO Events
 
@@ -259,17 +269,27 @@ homesoil/
 
 All CoAP requests must include `device_secret` in the JSON payload for authentication.
 
+**CoAP Response Codes:**
+- `2.05 Content` — Successful operation
+- `4.00 Bad Request` — Malformed or unparseable payload
+- `4.01 Unauthorized` — Invalid or missing `device_secret`
+- `4.04 Not Found` — Unknown endpoint path
+
+**DTLS Support:** CoAP traffic can be encrypted with DTLS-PSK (Pre-Shared Key). The `device_secret` serves as the PSK. DTLS configuration is in `dtls.rs`.
+
 ### 3.6 Module Dependency Graph
 
 ```
 main.rs
 ├── servers.rs ← auth.rs, events.rs, handlers.rs, flow_engine.rs, intermittent.rs
 ├── server.rs ← message/mod.rs, observer.rs
-├── client.rs (CoAP client for device communication)
+├── coap_client.rs ← dtls.rs, client.rs (centralized CoAP command sender)
+├── dtls.rs ← openssl (DTLS-PSK transport)
+├── validation.rs (input validation for CoAP payloads)
 ├── events.rs ← sensor_methods/handlers, actuator_methods/handlers,
 │                script_methods, flow_methods, script_parser,
-│                condition_parser, helper, intermittent
-├── flow_engine.rs ← flow_methods, actuator_methods, sensor_methods, client
+│                condition_parser, helper, intermittent, coap_client
+├── flow_engine.rs ← flow_methods, actuator_methods, sensor_methods, coap_client
 ├── db.rs ← schema.rs
 └── models.rs ← schema.rs
 ```
@@ -570,22 +590,25 @@ enum class FlowNodeType { SENSOR_INPUT, ACTUATOR_OUTPUT, COMPARISON, LOGIC_GATE,
 ### 6.1 Socket.IO (Clients ↔ Backend)
 
 - **Protocol**: Socket.IO v5 (socketioxide 0.8 on server, socket.io-client 4.8 on clients)
-- **Transport**: WebSocket with HTTP long-polling fallback
-- **Port**: 4000
-- **Auth**: Token or PIN sent in connection handshake
+- **Transport**: WebSocket with HTTP long-polling fallback; TLS optional (via `TLS_CERT_PATH`/`TLS_KEY_PATH`)
+- **Port**: 4000 (HTTP or HTTPS depending on TLS config)
+- **Auth**: Token or PIN sent in connection handshake; tokens stored as SHA-256 hashes in DB
 - **Pattern**: Event-driven — clients emit commands, server broadcasts state changes to all
 
 ### 6.2 CoAP (Backend ↔ IoT Devices)
 
 - **Protocol**: CoAP 1.0 (RFC 7252)
-- **Transport**: UDP
-- **Port**: 5683 (standard)
+- **Transport**: UDP (plain) or DTLS 1.2 (encrypted, PSK cipher suites)
+- **Port**: 5683 (standard CoAP), 5684 (CoAPS/DTLS)
 - **Features implemented**:
   - Confirmable (CON) and Non-Confirmable (NON) messages
   - Block-wise transfers (Block1 upload, Block2 download, 1KB chunks)
   - Observe pattern (pub/sub for resource updates)
-  - Multicast discovery (IPv4 224.0.1.187, IPv6 ff0x::fd)
+  - Multicast discovery (IPv4 224.0.1.187, IPv6 ff0x::fd) — rate limited (5/min per source IP), disableable via `DISABLE_DISCOVERY=true`
+  - DTLS-PSK encryption (`dtls.rs`) — `device_secret` as pre-shared key
+  - Proper CoAP response codes (4.01 Unauthorized, 4.00 Bad Request, 4.04 Not Found)
 - **Auth**: `device_secret` field in every JSON payload
+- **Input validation**: IP address format, payload size (max 1KB), sensor value parsing
 
 ### 6.3 Health Check Protocol
 
@@ -613,6 +636,7 @@ CREATE TABLE sensors (
     ip_address  TEXT NOT NULL,
     port        SMALLINT NOT NULL,
     online      TINYINT NOT NULL DEFAULT 0,
+    dtls_supported BOOLEAN NOT NULL DEFAULT 0,
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME
 );
@@ -639,6 +663,7 @@ CREATE TABLE actuators (
     intermittent       TINYINT NOT NULL DEFAULT 0,
     intermittent_on_ms  INTEGER NOT NULL DEFAULT 1000,
     intermittent_off_ms INTEGER NOT NULL DEFAULT 1000,
+    dtls_supported     BOOLEAN NOT NULL DEFAULT 0,
     created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME
 );
@@ -702,6 +727,7 @@ SessionTokens      (standalone)
 | 5 | 2026-03-17 | Create `flows` table |
 | 6 | 2026-03-25 | Create `session_tokens` table |
 | 7 | 2026-03-25 | Add `intermittent_*` columns to `actuators` |
+| 8 | 2026-04-07 | Security hardening: add `dtls_supported` to sensors/actuators, clear session_tokens |
 
 Run migrations: `cd homesoil && diesel migration run`
 
@@ -715,43 +741,101 @@ Run migrations: `cd homesoil && diesel migration run`
 ┌─────────────────────────────────────────────────────────────┐
 │  First-time Pairing                                          │
 │                                                              │
-│  1. Backend generates 6-digit PIN + 32-char device secret   │
-│  2. PIN displayed in console                                 │
-│  3. Client sends { pin: "123456" } on Socket.IO connect     │
-│  4. Backend validates PIN, generates 48-char session token  │
-│  5. Client receives and stores token in localStorage/       │
+│  1. Backend generates 8-digit PIN + 32-char device secret   │
+│  2. PIN displayed in console (expires after 10 minutes)     │
+│  3. Client sends { pin: "12345678" } on Socket.IO connect   │
+│  4. Backend validates PIN (max 3 attempts, exponential       │
+│     backoff: 60s → 300s → 3600s lockout)                    │
+│  5. Backend generates 48-char session token, stores          │
+│     SHA-256 hash in DB                                       │
+│  6. Client receives plaintext token, stores in localStorage/ │
 │     DataStore                                                │
 │                                                              │
 │  Subsequent Connections                                      │
 │                                                              │
 │  1. Client sends { token: "abc..." } on Socket.IO connect   │
-│  2. Backend validates token exists in DB + age < 30 days    │
-│  3. Expired tokens are deleted automatically                │
+│  2. Backend hashes token with SHA-256, looks up hash in DB  │
+│  3. Expired tokens (>30 days) deleted by hourly cleanup     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 8.2 Rate Limiting
 
-- **Max PIN attempts**: 5 per socket
-- **Lockout duration**: 60 seconds
-- **Reset**: After lockout period or successful auth
-- **Scope**: Per socket ID (note: multiple connections can bypass)
+| Control | Limit | Details |
+|---|---|---|
+| **PIN attempts** | 3 per socket | Exponential backoff: 60s → 300s → 3600s lockout |
+| **PIN expiry** | 10 minutes | PIN becomes invalid after startup timeout |
+| **CoAP discovery** | 5 per source IP per 60s | Prevents network mapping/abuse |
+| **Actuator toggle** | 1 per actuator per second | Prevents rapid-fire state changes |
+| **Actuator pulse** | 1 per actuator per 3 seconds | Protects physical devices from damage |
 
-### 8.3 CoAP Device Auth
+### 8.3 Transport Security
 
-All CoAP requests include `device_secret` in the JSON payload. The backend validates it against the secret generated at startup. No DTLS encryption.
+| Channel | Encryption | Configuration |
+|---|---|---|
+| **Frontend ↔ Backend** | TLS (optional) | Set `TLS_CERT_PATH` + `TLS_KEY_PATH` env vars |
+| **Devices ↔ Backend** | DTLS-PSK (optional) | `dtls.rs` — `device_secret` as PSK |
+| **Multicast Discovery** | None | Rate limited; disable with `DISABLE_DISCOVERY=true` |
 
-### 8.4 Security Considerations
+- **TLS**: Axum server binds with `axum_server::bind_rustls()` when certificates are provided. Falls back to plain HTTP with a startup warning otherwise.
+- **DTLS**: Pre-Shared Key mode using OpenSSL. Cipher suites: `PSK-AES256-CBC-SHA:PSK-AES128-CBC-SHA`. The existing `device_secret` doubles as the PSK.
+- **Frontend auto-detection**: `Websocket.ts` detects `https://` page protocol and switches to `wss://` automatically.
+
+### 8.4 CoAP Device Auth
+
+All CoAP requests include `device_secret` in the JSON payload. The backend validates it and returns proper CoAP response codes:
+- `4.01 Unauthorized` for invalid/missing `device_secret`
+- `4.00 Bad Request` for unparseable payloads
+- `4.04 Not Found` for unknown paths
+
+### 8.5 Input Validation (`validation.rs`)
+
+| Validation | Rule | Applied To |
+|---|---|---|
+| IP address | Must be valid IPv4/IPv6; rejects loopback unless `IS_DEV=true` | Sensor/actuator registration |
+| Port | Range 1024–32767 | Sensor/actuator registration |
+| Sensor value | Must parse as `f64` | Sensor readings |
+| Payload size | Max 1024 bytes | All CoAP registration and read payloads |
+
+### 8.6 Script Engine Resource Limits
+
+| Limit | Value | Protects Against |
+|---|---|---|
+| Max execution time | 5 minutes | Infinite scripts blocking threads |
+| Max loop iterations | 10,000 per LOOP/WHILE | Unbounded loops |
+| Max DELAY per call | 60 seconds | Extremely long delays |
+| Max variables | 100 | Memory exhaustion |
+
+### 8.7 Session Token Security
+
+- Tokens are **hashed with SHA-256** before storage in the `session_tokens` table
+- Incoming tokens are hashed before DB lookup — plaintext tokens never touch the database
+- Expired tokens (>30 days) cleaned up by a background thread every hour
+
+### 8.8 Structured Logging
+
+All `println!()` calls replaced with `env_logger` / `log` crate macros:
+- `info!` — normal operations (startup, connections, disconnections)
+- `warn!` — security events (failed auth, rate limits, rejected CoAP requests)
+- `error!` — failures (database errors, CoAP timeouts)
+- Secrets, tokens, and full payloads are **never logged**
+
+### 8.9 Security Posture Summary
 
 | Area | Status | Notes |
 |---|---|---|
-| Socket.IO transport | No TLS | Traffic unencrypted on local network |
-| CoAP transport | No DTLS | Device commands transmitted in plaintext |
-| PIN brute force | Protected | Rate limiting (5 attempts / 60s lockout) |
-| Session tokens | 30-day expiry | No manual revocation mechanism |
+| Socket.IO transport | TLS ready | Enabled via env vars; auto-detected by frontend |
+| CoAP transport | DTLS-PSK ready | `dtls.rs` module; `device_secret` as PSK |
+| PIN brute force | Hardened | 8-digit PIN, 3 attempts, exponential backoff, 10-min expiry |
+| Session tokens | SHA-256 hashed | Plaintext tokens never stored in DB |
 | Token storage (web) | localStorage | Cleared only on explicit logout |
 | Token storage (Android) | DataStore | Encrypted at rest by Android |
-| Input validation | Partial | JSON parsing; no deep payload validation |
+| Input validation | Comprehensive | IP, port, payload size, sensor values validated |
+| CoAP response codes | Proper | 4.01, 4.00, 4.04 returned (not plaintext strings) |
+| Script engine | Resource-limited | Timeout, loop cap, delay cap, variable cap |
+| Actuator commands | Rate limited | 1/sec toggle, 1/3sec pulse per actuator |
+| Discovery | Rate limited | 5/min per source IP; can be fully disabled |
+| Logging | Structured | `env_logger` with severity levels; no secret leakage |
 | XSS protection | DOMPurify | Used in frontend for user-generated content |
 
 ---
@@ -793,13 +877,15 @@ A custom scripting language parsed by `script_parser.rs` (~1,104 lines):
 - `SEND_TO_DASHBOARD <message>` — Show notification
 - `SET <var> <value>` / `UNSET <var>` — Variable management
 - `ADD`, `SUBTRACT`, `MULTIPLY`, `DIVIDE`, `MODULO` — Arithmetic
-- `DELAY <ms>` — Wait
+- `DELAY <ms>` — Wait (capped at 60,000ms per call)
 
 **Control Flow:**
 - `IF <condition> THEN ... END` — Conditional
-- `WHILE <condition> ... END` — Loop
-- `LOOP <n> ... END` — Fixed iterations
+- `WHILE <condition> ... END` — Loop (max 10,000 iterations)
+- `LOOP <n> ... END` — Fixed iterations (max 10,000 iterations)
 - `BREAK` / `CONTINUE` — Loop control
+
+**Resource Limits:** Scripts are killed if they exceed 5 minutes of execution, 10,000 loop iterations, 60s per DELAY, or 100 variables. Errors are reported to the dashboard.
 
 **Scheduling:** Scripts can have a cron expression for recurring execution.
 
@@ -862,9 +948,13 @@ Open `homesoil-android/` in Android Studio, build and run on device or emulator.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | Yes | — | SQLite database path (`sqlite:./db/homesoil.sqlite`) |
-| `IS_DEV` | No | `false` | If `true`, binds to `127.0.0.1` instead of LAN IP |
+| `IS_DEV` | No | `false` | If `true`, binds to `127.0.0.1`; allows loopback IPs in validation |
 | `LOGIN_TOKEN` | No | — | Override auth token (if set) |
 | `COAP_PORT` | No | `5683` | CoAP server port |
+| `TLS_CERT_PATH` | No | — | PEM certificate file path for HTTPS/WSS |
+| `TLS_KEY_PATH` | No | — | PEM private key file path for HTTPS/WSS |
+| `DISABLE_DISCOVERY` | No | `false` | Set `true` to disable CoAP multicast discovery |
+| `RUST_LOG` | No | `info` | Log level filter (e.g., `debug`, `warn`, `homesoil=debug`) |
 
 ---
 
@@ -882,11 +972,12 @@ A `docker-compose.yml` is provided in the `homesoil/` directory:
 | Consideration | Current State | Recommendation |
 |---|---|---|
 | Database | SQLite (single-writer) | Sufficient for single-node; PostgreSQL for multi-node |
-| TLS | None | Add TLS termination via reverse proxy (nginx/caddy) |
-| Logging | `println!()` | Switch to `tracing` crate with structured output |
+| TLS | Built-in (rustls) | Set `TLS_CERT_PATH`/`TLS_KEY_PATH`; or use reverse proxy |
+| DTLS | Built-in (openssl PSK) | Enable for CoAP device encryption |
+| Logging | `env_logger` (structured) | Consider `tracing` for async span support |
 | Monitoring | None | Add Prometheus metrics endpoint |
 | Backup | Manual | Automate SQLite backup (VACUUM INTO) |
-| Rate limiting | Per-socket only | Add HTTP-layer rate limiting |
+| Rate limiting | Multi-layer | PIN (exponential backoff), discovery (per-IP), actuator (per-device) |
 
 ---
 
@@ -896,12 +987,12 @@ A `docker-compose.yml` is provided in the `homesoil/` directory:
 
 | Application | Framework | Test Files | Test Count | Coverage |
 |---|---|---|---|---|
-| **Rust Backend** | `cargo test` | 4 integration + 2 inline | ~118 tests | Flow engine, auth, conditions, flow CRUD |
+| **Rust Backend** | `cargo test` | 4 integration + 2 inline | ~134 tests | Flow engine, auth, conditions, flow CRUD, CoAP |
 | **SvelteKit Frontend** | Vitest + jsdom | 7 files | ~96 tests | Stores, WebSocket events, models, enums |
 | **Android App** | — | 0 files | 0 tests | **None** |
 | **CI/CD** | — | — | — | **No pipeline configured** |
 
-**Total: ~214 tests** (excluding emulator tests)
+**Total: ~230 tests** (excluding emulator tests)
 
 ### 12.2 Rust Backend Tests
 
@@ -927,11 +1018,11 @@ A `docker-compose.yml` is provided in the `homesoil/` directory:
 - Enable/disable toggle
 - Lifecycle testing (insert → update → toggle → delete)
 
-**`auth_tests.rs`** (13 tests):
-- PIN generation (6-digit validation, randomness)
+**`auth_tests.rs`** (11 tests):
+- PIN generation (8-digit validation, randomness)
 - Device secret generation (32-char format)
 - Session token generation (48-char format)
-- Rate limiting (max attempts, reset, clear)
+- Rate limiting (3 max attempts, exponential backoff, reset, clear)
 
 #### Inline Unit Tests
 
@@ -1078,4 +1169,4 @@ A `docker-compose.yml` is provided in the `homesoil/` directory:
 
 ---
 
-*Generated on 2026-04-02*
+*Generated on 2026-04-07 — Updated with security hardening (DTLS, TLS, auth hardening, input validation, resource limits, structured logging)*

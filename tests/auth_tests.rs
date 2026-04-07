@@ -6,13 +6,13 @@ use homesoil::auth::{
 use std::collections::HashSet;
 
 #[test]
-fn test_generate_pin_is_six_digits() {
+fn test_generate_pin_is_eight_digits() {
     for _ in 0..100 {
         let pin = generate_pin();
-        assert_eq!(pin.len(), 6, "PIN should be 6 characters");
+        assert_eq!(pin.len(), 8, "PIN should be 8 characters");
         assert!(pin.parse::<u32>().is_ok(), "PIN should be numeric");
         let n: u32 = pin.parse().unwrap();
-        assert!(n >= 100000 && n <= 999999, "PIN should be 6 digits");
+        assert!(n >= 10000000 && n <= 99999999, "PIN should be 8 digits");
     }
 }
 
@@ -68,11 +68,11 @@ fn test_rate_limit_blocks_after_max_attempts() {
     let id = "test_block_99999";
     clear_failed_attempts(id);
 
-    for _ in 0..5 {
+    for _ in 0..3 {
         record_failed_attempt(id);
     }
 
-    assert!(!check_rate_limit(id), "Should be rate limited after 5 attempts");
+    assert!(!check_rate_limit(id), "Should be rate limited after 3 attempts");
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_rate_limit_clear_resets() {
     let id = "test_clear_88888";
     clear_failed_attempts(id);
 
-    for _ in 0..5 {
+    for _ in 0..3 {
         record_failed_attempt(id);
     }
     assert!(!check_rate_limit(id));
@@ -94,11 +94,11 @@ fn test_rate_limit_allows_below_max() {
     let id = "test_below_77777";
     clear_failed_attempts(id);
 
-    for _ in 0..4 {
+    for _ in 0..2 {
         record_failed_attempt(id);
     }
 
-    assert!(check_rate_limit(id), "Should still be allowed with 4 attempts");
+    assert!(check_rate_limit(id), "Should still be allowed with 2 attempts");
 }
 
 #[test]

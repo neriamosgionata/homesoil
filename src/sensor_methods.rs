@@ -16,6 +16,7 @@ use crate::schema::sensor_reads::dsl::{id as sensor_read_id, sensor_id, sensor_v
 use crate::schema::sensors::updated_at;
 use serde_json::from_str;
 
+use crate::validation;
 use crate::sensor_types::{
     SENSOR_TYPE_CURRENT, SENSOR_TYPE_HUMIDITY, SENSOR_TYPE_PRESSURE, SENSOR_TYPE_RAIN,
     SENSOR_TYPE_SOLAR_RADIATION, SENSOR_TYPE_TEMPERATURE, SENSOR_TYPE_UNKNOWN, SENSOR_TYPE_UV,
@@ -23,9 +24,16 @@ use crate::sensor_types::{
 };
 
 pub fn register_sensor(payload: String) -> Result<Sensor> {
+    validation::validate_payload_size(&payload, 1024)
+        .map_err(|e| Error::msg(e))?;
+
     let conn = &mut connect()?;
 
     let mut new_sensor = from_str::<NewSensor>(&payload)?;
+
+    // Validate IP address and port
+    validation::validate_ip_address(new_sensor.get_ip_address())
+        .map_err(|e| Error::msg(e))?;
 
     new_sensor.set_created_at(chrono::Local::now().naive_local());
 
@@ -160,9 +168,16 @@ pub fn change_sensor_name(payload: String) -> Result<Sensor> {
 }
 
 pub fn read_sensor(payload: String) -> Result<SensorRead> {
+    validation::validate_payload_size(&payload, 1024)
+        .map_err(|e| Error::msg(e))?;
+
     let conn = &mut connect()?;
 
     let mut new_sensor_read = from_str::<NewSensorRead>(&payload)?;
+
+    // Validate sensor value is a parseable number
+    validation::validate_sensor_value(new_sensor_read.get_sensor_value())
+        .map_err(|e| Error::msg(e))?;
 
     new_sensor_read.set_created_at(chrono::Local::now().naive_local());
 

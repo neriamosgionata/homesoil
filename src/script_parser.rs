@@ -8,6 +8,27 @@ use anyhow::{anyhow, Error, Result};
 use regex::Regex;
 use socketioxide::extract::SocketRef;
 use std::collections::HashMap;
+use log::{debug, warn};
+use std::cell::RefCell;
+use std::time::Instant;
+
+/// Script engine resource limits
+const MAX_EXECUTION_SECONDS: u64 = 300; // 5 minutes
+const MAX_LOOP_ITERATIONS: u64 = 10_000;
+const MAX_DELAY_MS: u64 = 60_000; // 60 seconds
+const MAX_VARIABLES: usize = 100;
+
+thread_local! {
+    static SCRIPT_START_TIME: RefCell<Option<Instant>> = const { RefCell::new(None) };
+}
+
+fn is_script_timed_out() -> bool {
+    SCRIPT_START_TIME.with(|t| {
+        t.borrow()
+            .map(|start| start.elapsed().as_secs() >= MAX_EXECUTION_SECONDS)
+            .unwrap_or(false)
+    })
+}
 
 #[cfg(windows)]
 const COMMAND_END: &str = "\r\n";
@@ -169,10 +190,17 @@ fn change_numeric_variable_value(
     Ok((variable_name.to_string(), variable_value))
 }
 
-fn save_variable(res: CommandFunctionResult, variables: &mut Variables) {
+fn save_variable(res: CommandFunctionResult, variables: &mut Variables) -> Option<CommandFunctionResult> {
     if let CommandFunctionResult::SaveVariable(variable_name, variable_value) = res {
+        if variables.len() >= MAX_VARIABLES && !variables.contains_key(&variable_name) {
+            warn!("Script variable limit reached ({})", MAX_VARIABLES);
+            return Some(CommandFunctionResult::Error(
+                format!("Too many variables (max {})", MAX_VARIABLES),
+            ));
+        }
         variables.insert(variable_name, variable_value);
     }
+    None
 }
 
 fn compute_message_with_variables(message: String, variables: &Variables) -> String {
@@ -199,7 +227,7 @@ fn compute_message_with_variables(message: String, variables: &Variables) -> Str
 fn parse_command_function(command: Command) -> CommandFunction {
     match command {
         COMMAND_ACTIVATE_ACTUATOR => Box::new(|args, _variables, _socket| {
-            println!("Activate actuator: {:?}", args);
+            debug!("Activate actuator: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -221,7 +249,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             }
         }),
         COMMAND_DEACTIVATE_ACTUATOR => Box::new(|args, _variables, _socket| {
-            println!("Deactivate actuator: {:?}", args);
+            debug!("Deactivate actuator: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -243,7 +271,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             }
         }),
         COMMAND_PULSE_ACTUATOR => Box::new(|args, _variables, _socket| {
-            println!("Pulse actuator: {:?}", args);
+            debug!("Pulse actuator: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -265,7 +293,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             }
         }),
         COMMAND_READ_SENSOR => Box::new(|args, _variables, _socket| {
-            println!("Read sensor: {:?}", args);
+            debug!("Read sensor: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -290,7 +318,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             }
         }),
         COMMAND_SET_VARIABLE => Box::new(|args, _variables, _socket| {
-            println!("Set variable: {:?}", args);
+            debug!("Set variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -312,7 +340,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             CommandFunctionResult::SaveVariable(variable_name.to_string(), variable_value)
         }),
         COMMAND_UNSET_VARIABLE => Box::new(|args, _variables, _socket| {
-            println!("Unset variable: {:?}", args);
+            debug!("Unset variable: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -333,7 +361,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             CommandFunctionResult::SaveVariable(variable_name.to_string(), Value::None)
         }),
         COMMAND_ADD_TO_VARIABLE => Box::new(|args, variables, _socket| {
-            println!("Add to variable: {:?}", args);
+            debug!("Add to variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -358,7 +386,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             )
         }),
         COMMAND_SUBTRACT_FROM_VARIABLE => Box::new(|args, variables, _socket| {
-            println!("Subtract from variable: {:?}", args);
+            debug!("Subtract from variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -386,7 +414,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             )
         }),
         COMMAND_MULTIPLY_VARIABLE => Box::new(|args, variables, _socket| {
-            println!("Multiply variable: {:?}", args);
+            debug!("Multiply variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -411,7 +439,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             )
         }),
         COMMAND_DIVIDE_VARIABLE => Box::new(|args, variables, _socket| {
-            println!("Divide variable: {:?}", args);
+            debug!("Divide variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -436,7 +464,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             )
         }),
         COMMAND_MODULO_VARIABLE => Box::new(|args, variables, _socket| {
-            println!("Modulo variable: {:?}", args);
+            debug!("Modulo variable: {:?}", args);
 
             match args_required(args, 2) {
                 Ok(_) => {}
@@ -491,7 +519,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             CommandFunctionResult::Continue
         }),
         COMMAND_INTERMITTENT_ACTUATOR => Box::new(|args, _variables, _socket| {
-            println!("Intermittent actuator: {:?}", args);
+            debug!("Intermittent actuator: {:?}", args);
 
             match args_required(args, 3) {
                 Ok(_) => {}
@@ -527,7 +555,7 @@ fn parse_command_function(command: Command) -> CommandFunction {
             CommandFunctionResult::Continue
         }),
         COMMAND_STOP_INTERMITTENT_ACTUATOR => Box::new(|args, _variables, _socket| {
-            println!("Stop intermittent actuator: {:?}", args);
+            debug!("Stop intermittent actuator: {:?}", args);
 
             match args_required(args, 1) {
                 Ok(_) => {}
@@ -556,7 +584,8 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             let args = args.clone().unwrap();
 
-            let delay = args[0].to_string(variables).parse::<u64>().unwrap();
+            let requested = args[0].to_string(variables).parse::<u64>().unwrap();
+            let delay = requested.min(MAX_DELAY_MS);
 
             std::thread::sleep(std::time::Duration::from_millis(delay));
 
@@ -589,7 +618,20 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
             CommandFunctionResult::Continue
         }),
         INSTRUCTION_LOOP => Box::new(|_args, inner_executions, variables, socket| {
+            let mut iterations: u64 = 0;
             loop {
+                iterations += 1;
+                if iterations > MAX_LOOP_ITERATIONS {
+                    return CommandFunctionResult::Error(
+                        format!("Loop exceeded maximum iterations ({})", MAX_LOOP_ITERATIONS),
+                    );
+                }
+                if is_script_timed_out() {
+                    return CommandFunctionResult::Error(
+                        "Script execution timed out".to_string(),
+                    );
+                }
+
                 let res = run_inner_executions(inner_executions, variables, socket);
 
                 if res.is_break() {
@@ -601,7 +643,9 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
                 }
 
                 if res.is_save_variable() {
-                    save_variable(res, variables);
+                    if let Some(err) = save_variable(res, variables) {
+                        return err;
+                    }
                     continue;
                 }
 
@@ -620,7 +664,20 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
                 }
             }
 
+            let mut iterations: u64 = 0;
             while parse_condition(args.clone().unwrap(), variables).evaluate() {
+                iterations += 1;
+                if iterations > MAX_LOOP_ITERATIONS {
+                    return CommandFunctionResult::Error(
+                        format!("While loop exceeded maximum iterations ({})", MAX_LOOP_ITERATIONS),
+                    );
+                }
+                if is_script_timed_out() {
+                    return CommandFunctionResult::Error(
+                        "Script execution timed out".to_string(),
+                    );
+                }
+
                 let res = run_inner_executions(inner_executions, variables, socket);
 
                 if res.is_break() {
@@ -632,7 +689,9 @@ fn parse_instruction_function(instruction: Instruction) -> InstructionFunction {
                 }
 
                 if res.is_save_variable() {
-                    save_variable(res, variables);
+                    if let Some(err) = save_variable(res, variables) {
+                        return err;
+                    }
                     continue;
                 }
 
@@ -674,6 +733,12 @@ fn run_inner_executions(
     variables: &mut Variables,
     socket: &SocketRef,
 ) -> CommandFunctionResult {
+    if is_script_timed_out() {
+        return CommandFunctionResult::Error(
+            format!("Script execution timed out ({}s)", MAX_EXECUTION_SECONDS),
+        );
+    }
+
     for execution in inner_executions {
         match execution {
             ScriptExecution::Command(command) => {
@@ -688,7 +753,9 @@ fn run_inner_executions(
                 }
 
                 if res.is_save_variable() {
-                    save_variable(res, variables);
+                    if let Some(err) = save_variable(res, variables) {
+                        return err;
+                    }
                     continue;
                 }
 
@@ -708,7 +775,9 @@ fn run_inner_executions(
                 }
 
                 if res.is_save_variable() {
-                    save_variable(res, variables);
+                    if let Some(err) = save_variable(res, variables) {
+                        return err;
+                    }
                     continue;
                 }
 
@@ -1086,9 +1155,13 @@ impl Script {
     }
 
     pub fn run(&self, socket: &SocketRef) -> Result<CommandFunctionResult> {
+        SCRIPT_START_TIME.with(|t| *t.borrow_mut() = Some(Instant::now()));
+
         let mut variables: Variables = HashMap::new();
 
         let res = run_inner_executions(&self.executions, &mut variables, socket);
+
+        SCRIPT_START_TIME.with(|t| *t.borrow_mut() = None);
 
         if res.is_error() {
             return Err(Error::msg(match res {

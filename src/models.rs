@@ -26,6 +26,7 @@ pub struct Sensor {
     online: bool,
     created_at: chrono::NaiveDateTime,
     updated_at: Option<chrono::NaiveDateTime>,
+    dtls_supported: bool,
 }
 
 impl Sensor {
@@ -39,6 +40,7 @@ impl Sensor {
             online: false,
             created_at: chrono::Local::now().naive_local(),
             updated_at: None,
+            dtls_supported: false,
         }
     }
 
@@ -104,6 +106,10 @@ impl Sensor {
 
     pub fn get_port(&self) -> i16 {
         self.port
+    }
+
+    pub fn get_dtls_supported(&self) -> bool {
+        self.dtls_supported
     }
 }
 
@@ -197,6 +203,7 @@ pub struct Actuator {
     intermittent: bool,
     intermittent_on_ms: i32,
     intermittent_off_ms: i32,
+    dtls_supported: bool,
 }
 
 impl Actuator {
@@ -214,6 +221,7 @@ impl Actuator {
             intermittent: false,
             intermittent_on_ms: 1000,
             intermittent_off_ms: 1000,
+            dtls_supported: false,
         }
     }
 
@@ -311,6 +319,10 @@ impl Actuator {
 
     pub fn get_intermittent_off_ms(&self) -> i32 {
         self.intermittent_off_ms
+    }
+
+    pub fn get_dtls_supported(&self) -> bool {
+        self.dtls_supported
     }
 }
 

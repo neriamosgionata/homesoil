@@ -11,12 +11,20 @@ use crate::schema::actuators;
 use crate::schema::actuators::dsl::{id, ip_address, name, port, pulse};
 
 use crate::schema::actuators::{state, updated_at};
+use crate::validation;
 use serde_json::from_str;
 
 pub fn register_actuator(payload: String) -> Result<Actuator> {
+    validation::validate_payload_size(&payload, 1024)
+        .map_err(|e| Error::msg(e))?;
+
     let conn = &mut connect()?;
 
     let mut new_actuator = from_str::<NewActuator>(&payload)?;
+
+    // Validate IP address
+    validation::validate_ip_address(new_actuator.get_ip_address())
+        .map_err(|e| Error::msg(e))?;
 
     new_actuator.set_created_at(chrono::Local::now().naive_local());
 

@@ -9,7 +9,7 @@ use crate::events::{
 use crate::models::Actuator;
 use crate::schema::actuators;
 use crate::schema::actuators::{online, updated_at};
-use crate::CoAPClient;
+use crate::coap_client;
 use anyhow::Result;
 use coap_lite::{CoapRequest, RequestType};
 use diesel::prelude::*;
@@ -19,6 +19,7 @@ use futures_util::FutureExt;
 use serde_json::json;
 use socketioxide::SocketIo;
 use std::net::SocketAddr;
+use log::{error, info};
 
 pub fn actuator_register_handler<'a>(
     socket: &'a SocketIo,
@@ -51,7 +52,7 @@ pub fn actuator_register_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator register event broadcast: {:?}", e);
+                            error!("Error emitting actuator register event broadcast: {:?}", e);
                         }
                     }
                 }
@@ -71,7 +72,7 @@ pub fn actuator_register_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator register event: {:?}", e);
+                            error!("Error emitting actuator register event: {:?}", e);
                         }
                     }
                 }
@@ -83,7 +84,7 @@ pub fn actuator_register_handler<'a>(
                 .to_string()
             }
             Err(e) => {
-                println!("Error registering actuator: {:?}", e);
+                error!("Error registering actuator: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -116,7 +117,7 @@ pub fn actuator_unregister_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting actuator unregister event broadcast: {:?}",
                                 e
                             );
@@ -133,7 +134,7 @@ pub fn actuator_unregister_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator unregister event: {:?}", e);
+                            error!("Error emitting actuator unregister event: {:?}", e);
                         }
                     }
                 }
@@ -141,7 +142,7 @@ pub fn actuator_unregister_handler<'a>(
                 actuator.get_id().to_string()
             }
             Err(e) => {
-                println!("Error unregistering actuator: {:?}", e);
+                error!("Error unregistering actuator: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -176,7 +177,7 @@ pub fn actuator_update_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting actuator name changed event broadcast: {:?}",
                                 e
                             );
@@ -195,7 +196,7 @@ pub fn actuator_update_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator name changed event: {:?}", e);
+                            error!("Error emitting actuator name changed event: {:?}", e);
                         }
                     }
                 }
@@ -203,7 +204,7 @@ pub fn actuator_update_handler<'a>(
                 "OK".to_string()
             }
             Err(e) => {
-                println!("Error changing actuator name: {:?}", e);
+                error!("Error changing actuator name: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -238,7 +239,7 @@ pub fn actuator_update_state_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!(
+                            info!(
                                 "Error emitting actuator state changed event broadcast: {:?}",
                                 e
                             );
@@ -257,7 +258,7 @@ pub fn actuator_update_state_handler<'a>(
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator state changed event: {:?}", e);
+                            error!("Error emitting actuator state changed event: {:?}", e);
                         }
                     }
                 }
@@ -265,7 +266,7 @@ pub fn actuator_update_state_handler<'a>(
                 "OK".to_string()
             }
             Err(e) => {
-                println!("Error changing actuator state: {:?}", e);
+                error!("Error changing actuator state: {:?}", e);
                 "KO".to_string()
             }
         }
@@ -274,12 +275,7 @@ pub fn actuator_update_state_handler<'a>(
 }
 
 pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
-    let address = "coap://".to_owned()
-        + actuator.get_ip_address()
-        + ":"
-        + actuator.get_port().to_string().as_str();
-
-    match CoAPClient::get(&address) {
+    match coap_client::ping_device(actuator.get_ip_address(), actuator.get_port()) {
         Ok(_) => {
             if !actuator.get_online() {
                 let conn = &mut match connect() {
@@ -298,7 +294,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                 match res {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error updating actuator: {:?}", e);
+                        error!("Error updating actuator: {:?}", e);
                         return;
                     }
                 }
@@ -314,7 +310,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator online event broadcast: {:?}", e);
+                            error!("Error emitting actuator online event broadcast: {:?}", e);
                         }
                     }
                 }
@@ -330,7 +326,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                     ) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Error emitting actuator online event: {:?}", e);
+                            error!("Error emitting actuator online event: {:?}", e);
                         }
                     }
                 }
@@ -353,7 +349,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
             match res {
                 Ok(_) => {}
                 Err(e) => {
-                    println!("Error updating actuator: {:?}", e);
+                    error!("Error updating actuator: {:?}", e);
                     return;
                 }
             }
@@ -369,7 +365,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting actuator online event broadcast: {:?}", e);
+                        error!("Error emitting actuator online event broadcast: {:?}", e);
                     }
                 }
             }
@@ -385,7 +381,7 @@ pub fn ping_actuator(actuator: &Actuator, socket: &SocketIo) {
                 ) {
                     Ok(_) => {}
                     Err(e) => {
-                        println!("Error emitting actuator online event: {:?}", e);
+                        error!("Error emitting actuator online event: {:?}", e);
                     }
                 }
             }
@@ -406,20 +402,12 @@ pub fn send_message_to_actuator(actuator_id: i32, message: &String) -> Result<St
 
     let actuator = actuator.unwrap();
 
-    let address = "coap://".to_owned()
-        + actuator.get_ip_address()
-        + ":"
-        + actuator.get_port().to_string().as_str();
-
-    match CoAPClient::post(&address, message.as_bytes().to_vec()) {
-        Ok(res) => {
-            let payload = String::from_utf8(res.message.payload);
-
-            match payload {
-                Ok(payload) => Ok(payload),
-                Err(_) => Ok("KO".to_string()),
-            }
-        }
+    match coap_client::send_actuator_command(
+        actuator.get_ip_address(),
+        actuator.get_port(),
+        message.as_bytes(),
+    ) {
+        Ok(payload) => Ok(payload),
         Err(_) => Ok("KO".to_string()),
     }
 }

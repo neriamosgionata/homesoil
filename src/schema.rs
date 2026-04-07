@@ -14,6 +14,7 @@ diesel::table! {
         intermittent -> Bool,
         intermittent_on_ms -> Integer,
         intermittent_off_ms -> Integer,
+        dtls_supported -> Bool,
     }
 }
 
@@ -60,6 +61,7 @@ diesel::table! {
         online -> Bool,
         created_at -> Timestamp,
         updated_at -> Nullable<Timestamp>,
+        dtls_supported -> Bool,
     }
 }
 

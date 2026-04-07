@@ -4,13 +4,14 @@ use crate::models::Flow;
 use crate::schema::actuators;
 use crate::db::connect;
 use crate::events::ACTUATOR_STATE_CHANGE_EVENT;
-use crate::CoAPClient;
+use crate::coap_client;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use socketioxide::SocketIo;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use log::{error, info};
 
 static FLOW_OUTPUT_STATES: LazyLock<Mutex<HashMap<i32, HashMap<String, bool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -70,7 +71,7 @@ pub fn evaluate_flows_for_sensor(sensor_id: i32, sensor_value: &str, socket: &So
     let flows = match get_enabled_flows() {
         Ok(f) => f,
         Err(e) => {
-            println!("Error loading enabled flows: {:?}", e);
+            error!("Error loading enabled flows: {:?}", e);
             return;
         }
     };
@@ -109,7 +110,7 @@ fn evaluate_flow(
     let sorted = match topological_sort(graph) {
         Some(s) => s,
         None => {
-            println!("Flow {} has cycles, skipping", flow.get_id());
+            info!("Flow {} has cycles, skipping", flow.get_id());
             return;
         }
     };
@@ -356,7 +357,7 @@ fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool, socket: &So
     let conn = &mut match connect() {
         Ok(c) => c,
         Err(e) => {
-            println!("Flow engine: error connecting to DB: {:?}", e);
+            error!("Flow engine: error connecting to DB: {:?}", e);
             return;
         }
     };
@@ -367,28 +368,25 @@ fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool, socket: &So
     {
         Ok(a) => a,
         Err(e) => {
-            println!("Flow engine: actuator {} not found: {:?}", actuator_id, e);
+            info!("Flow engine: actuator {} not found: {:?}", actuator_id, e);
             return;
         }
     };
 
-    let address = format!(
-        "coap://{}:{}",
-        actuator.get_ip_address(),
-        actuator.get_port()
-    );
-
-    let command = if pulse {
-        b"ON-PULSE".to_vec()
+    let command: &[u8] = if pulse {
+        b"ON-PULSE"
     } else if state {
-        b"ON".to_vec()
+        b"ON"
     } else {
-        b"OFF".to_vec()
+        b"OFF"
     };
 
-    match CoAPClient::post(&address, command) {
-        Ok(response) => {
-            let payload = String::from_utf8(response.message.payload).unwrap_or_default();
+    match coap_client::send_actuator_command(
+        actuator.get_ip_address(),
+        actuator.get_port(),
+        command,
+    ) {
+        Ok(payload) => {
             let new_state = payload == "ON" || payload == "ON-PULSE";
 
             let _ = diesel::update(actuators::table.find(actuator_id))
@@ -410,13 +408,13 @@ fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool, socket: &So
                 );
             }
 
-            println!(
+            info!(
                 "Flow engine: actuator {} set to {} (pulse={})",
                 actuator_id, new_state, pulse
             );
         }
         Err(e) => {
-            println!(
+            info!(
                 "Flow engine: error sending command to actuator {}: {:?}",
                 actuator_id, e
             );
