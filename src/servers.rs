@@ -26,9 +26,7 @@ use socketioxide::{SocketIo, TransportType};
 use std::collections::HashMap as StdHashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
-use std::thread::{spawn, JoinHandle};
 use std::time::{Duration, Instant};
-use tokio::runtime::Runtime;
 
 /// Rate limiter for CoAP multicast discovery: max 5 responses per source IP per 60 seconds.
 static DISCOVERY_RATE_LIMITER: LazyLock<StdMutex<StdHashMap<String, (u32, Instant)>>> =
@@ -163,72 +161,74 @@ pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Resu
         }
     });
 
-    spawn(move || {
-        Runtime::new()
-            .expect("Failed to create Tokio runtime")
-            .block_on(async {
-                let app = Router::new()
-                    .route("/", get(|| async { "OK" }))
-                    .layer(layer)
-                    .layer(CorsLayer);
+    tokio::spawn(async move {
+        let app = Router::new()
+            .route("/", get(|| async { "OK" }))
+            .layer(layer)
+            .layer(CorsLayer);
 
-                let addr = address
-                    .parse::<SocketAddr>()
-                    .expect("Failed to parse SocketIO server address");
+        let addr = address
+            .parse::<SocketAddr>()
+            .expect("Failed to parse SocketIO server address");
 
-                let tls_cert = std::env::var("TLS_CERT_PATH").ok();
-                let tls_key = std::env::var("TLS_KEY_PATH").ok();
+        let tls_cert = std::env::var("TLS_CERT_PATH").ok();
+        let tls_key = std::env::var("TLS_KEY_PATH").ok();
 
-                match (tls_cert, tls_key) {
-                    (Some(cert_path), Some(key_path)) => {
-                        info!("Starting SocketIO server with TLS on {}", address);
-                        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                            &cert_path, &key_path,
-                        )
-                        .await
-                        .expect("Failed to load TLS certificates");
+        match (tls_cert, tls_key) {
+            (Some(cert_path), Some(key_path)) => {
+                info!("Starting SocketIO server with TLS on {}", address);
+                let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                    &cert_path, &key_path,
+                )
+                .await
+                .expect("Failed to load TLS certificates");
 
-                        axum_server::bind_rustls(addr, config)
-                            .serve(app.into_make_service())
-                            .await
-                            .unwrap();
-                    }
-                    _ => {
-                        warn!("TLS_CERT_PATH/TLS_KEY_PATH not set — running Socket.IO without TLS");
-                        info!("Starting SocketIO server on {}", address);
+                axum_server::bind_rustls(addr, config)
+                    .serve(app.into_make_service())
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                warn!("TLS_CERT_PATH/TLS_KEY_PATH not set — running Socket.IO without TLS");
+                info!("Starting SocketIO server on {}", address);
 
-                        AxumServer::bind(&addr)
-                            .serve(app.into_make_service())
-                            .await
-                            .unwrap();
-                    }
-                }
+                AxumServer::bind(&addr)
+                    .serve(app.into_make_service())
+                    .await
+                    .unwrap();
+            }
+        }
 
-                info!("SocketIO server stopped");
-            });
+        info!("SocketIO server stopped");
     });
 
     Ok(io)
 }
 
-pub async fn run_sensor_health_check(socket: &SocketIo) -> JoinHandle<()> {
-    let boxed_socket = Box::new(socket.clone());
+pub fn run_sensor_health_check(socket: &SocketIo) {
+    let socket = socket.clone();
 
-    spawn(move || loop {
-        if let Ok(sensors) = get_all_registered_sensors() {
-            sensors.iter().for_each(|sensor| {
-                ping_sensor(sensor, boxed_socket.as_ref());
-            });
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+
+            let socket_clone = socket.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Ok(sensors) = get_all_registered_sensors() {
+                    sensors.iter().for_each(|sensor| {
+                        ping_sensor(sensor, &socket_clone);
+                    });
+                }
+
+                if let Ok(actuators) = get_all_registered_actuators() {
+                    actuators.iter().for_each(|actuator| {
+                        ping_actuator(actuator, &socket_clone);
+                    });
+                }
+            }).await.ok();
         }
-
-        if let Ok(actuators) = get_all_registered_actuators() {
-            actuators.iter().for_each(|actuator| {
-                ping_actuator(actuator, boxed_socket.as_ref());
-            });
-        }
-
-        std::thread::sleep(Duration::from_secs(5));
-    })
+    });
 }
 
 pub async fn run_coap_server(
@@ -240,140 +240,140 @@ pub async fn run_coap_server(
 ) {
     let boxed_socket = Arc::new(socket.clone());
 
-    spawn(move || {
+    tokio::spawn(async move {
         info!("Starting CoAP server on {}", bind_address);
 
-        Runtime::new()
-            .expect("Failed to create Tokio runtime")
-            .block_on(async {
-                let mut server = Server::new(bind_address).unwrap();
-                server.enable_all_coap(0);
+        let mut server = Server::new(bind_address).unwrap();
+        server.enable_all_coap(0);
 
-                let discovery_payload = format!(
-                    r#"{{"ip":"{}","coap_port":{}}}"#,
-                    actual_ip, coap_port
-                );
+        let discovery_payload = format!(
+            r#"{{"ip":"{}","coap_port":{}}}"#,
+            actual_ip, coap_port
+        );
 
-                server
-                    .run(move |request| {
-                        let discovery_payload = discovery_payload.clone();
-                        let boxed_socket = boxed_socket.clone();
-                        async move {
-                            let request_ref = &request;
+        server
+            .run(move |request| {
+                let discovery_payload = discovery_payload.clone();
+                let boxed_socket = boxed_socket.clone();
+                async move {
+                    let request_ref = &request;
 
-                            let path = format!("{}{}", "/", request_ref.get_path());
-                            if path == "/.well-known/core" {
-                                // Rate limit discovery: max 5 per source IP per minute
-                                let source_ip = request_ref
-                                    .source
-                                    .map(|s| s.ip().to_string())
-                                    .unwrap_or_default();
+                    let path = format!("{}{}", "/", request_ref.get_path());
+                    if path == "/.well-known/core" {
+                        // Rate limit discovery: max 5 per source IP per minute
+                        let source_ip = request_ref
+                            .source
+                            .map(|s| s.ip().to_string())
+                            .unwrap_or_default();
 
-                                if !source_ip.is_empty()
-                                    && !check_discovery_rate_limit(&source_ip)
-                                {
-                                    warn!(
-                                        "Discovery rate limited for {}",
-                                        source_ip
-                                    );
-                                    return None;
-                                }
+                        if !source_ip.is_empty()
+                            && !check_discovery_rate_limit(&source_ip)
+                        {
+                            warn!(
+                                "Discovery rate limited for {}",
+                                source_ip
+                            );
+                            return None;
+                        }
 
-                                // If discovery is disabled via env, don't respond
-                                if std::env::var("DISABLE_DISCOVERY")
-                                    .map(|v| v == "true" || v == "1")
-                                    .unwrap_or(false)
-                                {
-                                    return None;
-                                }
+                        // If discovery is disabled via env, don't respond
+                        if std::env::var("DISABLE_DISCOVERY")
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(false)
+                        {
+                            return None;
+                        }
 
+                        return match request.response {
+                            Some(mut message) => {
+                                message.message.payload =
+                                    discovery_payload.as_bytes().to_vec();
+                                Some(message)
+                            }
+                            _ => None,
+                        };
+                    }
+
+                    // Validate device secret from JSON payload
+                    if let Ok(body) =
+                        String::from_utf8(request_ref.message.payload.clone())
+                    {
+                        if let Ok(parsed) =
+                            serde_json::from_str::<serde_json::Value>(&body)
+                        {
+                            let secret = parsed
+                                .get("device_secret")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if secret != device_secret {
+                                warn!(
+                                    "Rejected CoAP request to {} — invalid device_secret",
+                                    path
+                                );
                                 return match request.response {
                                     Some(mut message) => {
+                                        message.message.header.code =
+                                            MessageClass::Response(Status::Unauthorized);
                                         message.message.payload =
-                                            discovery_payload.as_bytes().to_vec();
+                                            b"Unauthorized".to_vec();
                                         Some(message)
                                     }
                                     _ => None,
                                 };
                             }
-
-                            // Validate device secret from JSON payload
-                            if let Ok(body) =
-                                String::from_utf8(request_ref.message.payload.clone())
-                            {
-                                if let Ok(parsed) =
-                                    serde_json::from_str::<serde_json::Value>(&body)
-                                {
-                                    let secret = parsed
-                                        .get("device_secret")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    if secret != device_secret {
-                                        warn!(
-                                            "Rejected CoAP request to {} — invalid device_secret",
-                                            path
-                                        );
-                                        return match request.response {
-                                            Some(mut message) => {
-                                                message.message.header.code =
-                                                    MessageClass::Response(Status::Unauthorized);
-                                                message.message.payload =
-                                                    b"Unauthorized".to_vec();
-                                                Some(message)
-                                            }
-                                            _ => None,
-                                        };
-                                    }
-                                } else {
-                                    warn!(
-                                        "Rejected CoAP request to {} — invalid payload",
-                                        path
-                                    );
-                                    return match request.response {
-                                        Some(mut message) => {
-                                            message.message.header.code =
-                                                MessageClass::Response(Status::BadRequest);
-                                            message.message.payload =
-                                                b"Bad Request".to_vec();
-                                            Some(message)
-                                        }
-                                        _ => None,
-                                    };
-                                }
-                            }
-
-                            let payload =
-                                path_handler(boxed_socket.as_ref(), request_ref).await;
-
-                            match request.response {
+                        } else {
+                            warn!(
+                                "Rejected CoAP request to {} — invalid payload",
+                                path
+                            );
+                            return match request.response {
                                 Some(mut message) => {
-                                    match payload {
-                                        Some(payload) => {
-                                            message.message.payload =
-                                                payload.as_bytes().to_vec();
-                                        }
-                                        None => {
-                                            message.message.header.code =
-                                                MessageClass::Response(Status::NotFound);
-                                            message.message.payload = b"Not Found".to_vec();
-                                        }
-                                    }
+                                    message.message.header.code =
+                                        MessageClass::Response(Status::BadRequest);
+                                    message.message.payload =
+                                        b"Bad Request".to_vec();
                                     Some(message)
                                 }
                                 _ => None,
-                            }
+                            };
                         }
-                    })
-                    .await
-                    .expect("Failed to create server");
-            });
+                    }
+
+                    let payload =
+                        path_handler(boxed_socket.as_ref(), request_ref).await;
+
+                    match request.response {
+                        Some(mut message) => {
+                            match payload {
+                                Some(payload) => {
+                                    message.message.payload =
+                                        payload.as_bytes().to_vec();
+                                }
+                                None => {
+                                    message.message.header.code =
+                                        MessageClass::Response(Status::NotFound);
+                                    message.message.payload = b"Not Found".to_vec();
+                                }
+                            }
+                            Some(message)
+                        }
+                        _ => None,
+                    }
+                }
+            })
+            .await
+            .expect("Failed to create server");
     });
 }
 
-pub async fn check_for_old_sensor_reads_records() {
-    spawn(move || loop {
-        let _: Result<_, _> = crate::sensor_methods::delete_old_sensor_reads_records();
-
-        std::thread::sleep(Duration::from_secs(3600));
+pub fn check_for_old_sensor_reads_records() {
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            tokio::task::spawn_blocking(|| {
+                let _: Result<_, _> = crate::sensor_methods::delete_old_sensor_reads_records();
+            }).await.ok();
+        }
     });
 }

@@ -1,24 +1,19 @@
 use anyhow::Result;
 use dotenv::dotenv;
 use homesoil::auth::{cleanup_expired_tokens, generate_device_secret, generate_pin, set_pin_created_at};
-use homesoil::db::connect;
+use homesoil::db::init_pool;
 use homesoil::servers::{
     check_for_old_sensor_reads_records, run_coap_server, run_sensor_health_check, run_socket_server,
 };
 use local_ip_address::local_ip;
 use log::info;
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    match connect() {
-        Ok(_) => {}
-        Err(e) => {
-            panic!("Error connecting to database: {}", e);
-        }
-    }
+    init_pool();
 
     let mut current_ip_address = match local_ip() {
         Ok(ip) => ip.to_string(),
@@ -45,7 +40,7 @@ async fn main() -> Result<()> {
 
     let io = run_socket_server(String::leak(current_ip_address_socket_io), String::leak(pin)).await?;
 
-    run_sensor_health_check(&io).await;
+    run_sensor_health_check(&io);
 
     run_coap_server(
         String::leak(coap_bind_address),
@@ -56,15 +51,19 @@ async fn main() -> Result<()> {
     )
     .await;
 
-    check_for_old_sensor_reads_records().await;
+    check_for_old_sensor_reads_records();
 
     // Periodically clean up expired session tokens
-    std::thread::spawn(|| loop {
-        cleanup_expired_tokens();
-        std::thread::sleep(std::time::Duration::from_secs(3600));
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            tokio::task::spawn_blocking(cleanup_expired_tokens).await.ok();
+        }
     });
 
-    std::thread::park();
+    tokio::signal::ctrl_c().await?;
+    info!("Shutting down");
 
     Ok(())
 }
