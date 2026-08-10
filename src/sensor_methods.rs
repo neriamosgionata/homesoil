@@ -12,7 +12,7 @@ use crate::schema::sensors::dsl::{id, ip_address, name, sensor_type};
 
 use crate::schema::sensor_reads;
 use crate::schema::sensor_reads::created_at;
-use crate::schema::sensor_reads::dsl::{id as sensor_read_id, sensor_id, sensor_value};
+use crate::schema::sensor_reads::dsl::{id as sensor_read_id, sensor_id};
 use crate::schema::sensors::updated_at;
 use serde_json::from_str;
 
@@ -34,12 +34,13 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
     // Validate IP address and port
     validation::validate_ip_address(new_sensor.get_ip_address())
         .map_err(|e| Error::msg(e))?;
+    validation::validate_port(new_sensor.get_port()).map_err(|e| Error::msg(e))?;
 
     new_sensor.set_created_at(chrono::Local::now().naive_local());
 
     if let Ok(sensor) = sensors::table
-        .filter(sensor_type.like(&new_sensor.get_sensor_type()))
-        .filter(ip_address.like(&new_sensor.get_ip_address()))
+        .filter(sensor_type.eq(&new_sensor.get_sensor_type()))
+        .filter(ip_address.eq(&new_sensor.get_ip_address()))
         .get_result(conn)
     {
         return Ok(sensor);
@@ -91,8 +92,8 @@ pub fn register_sensor(payload: String) -> Result<Sensor> {
     }
 
     let sensor = sensors::table
-        .filter(sensor_type.like(&new_sensor.get_sensor_type()))
-        .filter(ip_address.like(&new_sensor.get_ip_address()))
+        .filter(sensor_type.eq(&new_sensor.get_sensor_type()))
+        .filter(ip_address.eq(&new_sensor.get_ip_address()))
         .get_result(conn);
 
     match sensor {
@@ -203,10 +204,12 @@ pub fn read_sensor(payload: String) -> Result<SensorRead> {
         }
     }
 
+    // The just-inserted read is the newest one for this sensor — never reuse an
+    // older row with the same value (which LIKE/eq matching could pick).
     let sensor_read = sensor_reads::table
         .filter(sensor_id.eq(new_sensor_read.get_sensor_id()))
-        .filter(sensor_value.like(&new_sensor_read.get_sensor_value()))
-        .get_result(conn);
+        .order(sensor_read_id.desc())
+        .first(conn);
 
     match sensor_read {
         Ok(sensor_read) => Ok(sensor_read),

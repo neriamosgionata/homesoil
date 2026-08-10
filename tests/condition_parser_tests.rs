@@ -203,3 +203,101 @@ fn test_boolean_not_equal() {
     let cond = parse_condition(args, &empty_vars());
     assert!(cond.evaluate());
 }
+
+#[test]
+fn test_and_conditions_both_true() {
+    let args = make_args(vec!["1", "==", "1", "&&", "2", "==", "2"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+}
+
+#[test]
+fn test_and_conditions_left_false() {
+    // Regression: the old parser dropped everything before the last clause
+    let args = make_args(vec!["1", "==", "2", "&&", "1", "==", "1"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(!cond.evaluate());
+}
+
+#[test]
+fn test_and_conditions_right_false() {
+    let args = make_args(vec!["1", "==", "1", "&&", "2", "==", "3"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(!cond.evaluate());
+}
+
+#[test]
+fn test_or_conditions() {
+    let args = make_args(vec!["1", "==", "2", "||", "2", "==", "2"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+}
+
+#[test]
+fn test_or_conditions_all_false() {
+    let args = make_args(vec!["1", "==", "2", "||", "2", "==", "3"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(!cond.evaluate());
+}
+
+#[test]
+fn test_and_or_mixed() {
+    let args = make_args(vec!["1", "==", "2", "||", "1", "==", "1", "&&", "2", "==", "2"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+}
+
+#[test]
+fn test_parenthesized_condition() {
+    let args = make_args(vec!["(", "1", "==", "1", "||", "1", "==", "2", ")", "&&", "3", "==", "3"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+}
+
+#[test]
+fn test_parenthesized_false_branch() {
+    // Regression: only the first parenthesized clause used to survive
+    let args = make_args(vec!["(", "1", "==", "2", ")", "&&", "(", "3", "==", "3", ")"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(!cond.evaluate());
+}
+
+#[test]
+fn test_compound_with_variables() {
+    let mut vars: Variables = HashMap::new();
+    vars.insert("$a".to_string(), Value::Int32(10));
+    vars.insert("$b".to_string(), Value::Int32(20));
+
+    let args = make_args(vec!["$a", "==", "10", "&&", "$b", "==", "20"]);
+    let cond = parse_condition(args, &vars);
+    assert!(cond.evaluate());
+
+    let args = make_args(vec!["$a", "==", "10", "&&", "$b", "==", "30"]);
+    let cond = parse_condition(args, &vars);
+    assert!(!cond.evaluate());
+}
+
+#[test]
+fn test_numeric_cross_type_equality() {
+    // 1 (Int32) must equal 1.0 (Float64)
+    let args = make_args(vec!["1", "==", "1.0"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+
+    let args = make_args(vec!["2", "<", "10.5"]);
+    let cond = parse_condition(args, &empty_vars());
+    assert!(cond.evaluate());
+}
+
+#[test]
+fn test_unbalanced_parenthesis_does_not_panic() {
+    let args = make_args(vec!["(", "1", "==", "1"]);
+    let cond = parse_condition(args, &empty_vars());
+    let _ = cond.evaluate();
+}
+
+#[test]
+fn test_empty_condition_does_not_panic() {
+    let cond = parse_condition(vec![], &empty_vars());
+    assert!(cond.evaluate());
+}

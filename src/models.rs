@@ -364,6 +364,14 @@ impl NewSensor {
         &self.name
     }
 
+    pub fn get_port(&self) -> i16 {
+        self.port
+    }
+
+    pub fn set_port(&mut self, port: i16) {
+        self.port = port;
+    }
+
     pub fn get_created_at(&self) -> &Option<chrono::NaiveDateTime> {
         &self.created_at
     }

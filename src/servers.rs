@@ -1,14 +1,15 @@
 use crate::actuator_handlers::ping_actuator;
 use crate::actuator_methods::get_all_registered_actuators;
 use crate::auth::{
-    check_rate_limit, clear_failed_attempts, generate_session_token, is_pin_expired,
-    is_valid_session_token, record_failed_attempt, save_session_token,
+    check_rate_limit, clear_failed_attempts, generate_session_token, get_current_pin,
+    is_pin_expired, is_valid_session_token, record_failed_attempt, rotate_pin,
+    save_session_token,
 };
 use crate::events::{
     register_all_callbacks, ALL_ACTUATORS_EVENT, ALL_LAST_SENSOR_READINGS_EVENT,
     ALL_SENSORS_EVENT, ALL_FLOWS_EVENT,
 };
-use crate::intermittent::set_socket_io;
+use crate::helper::set_socket_io;
 use crate::flow_methods::get_flows;
 use crate::handlers::path_handler;
 use crate::sensor_handlers::ping_sensor;
@@ -64,7 +65,7 @@ struct AuthData {
     pin: String,
 }
 
-pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Result<SocketIo> {
+pub async fn run_socket_server(address: &'static str) -> Result<SocketIo> {
     let (layer, io) = SocketIo::builder()
         .connect_timeout(Duration::from_secs(30))
         .req_path("/socket.io")
@@ -74,10 +75,8 @@ pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Resu
     set_socket_io(io.clone());
 
     io.ns("/", move |socket: SocketRef, Data(auth): Data<AuthData>| {
-        let socket_id = format!("{:?}", socket.id);
-
-        if !auth.pin.is_empty() && !check_rate_limit(&socket_id) {
-            warn!("Rate limited, disconnecting socket: {}", socket_id);
+        if !auth.pin.is_empty() && !check_rate_limit() {
+            warn!("Rate limited, disconnecting socket");
             socket.disconnect().ok();
             return;
         }
@@ -86,10 +85,15 @@ pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Resu
             is_valid_session_token(&auth.token)
         } else if !auth.pin.is_empty() {
             if is_pin_expired() {
-                warn!("PIN expired, rejecting pairing attempt from {}", socket_id);
+                // Old PIN expired — rotate so pairing remains possible
+                let new_pin = rotate_pin();
+                warn!("PIN expired, rotated. New PIN: {}", new_pin);
                 false
             } else {
-                auth.pin == pin
+                match get_current_pin() {
+                    Some(current_pin) => auth.pin == current_pin,
+                    None => false,
+                }
             }
         } else {
             false
@@ -97,26 +101,26 @@ pub async fn run_socket_server(address: &'static str, pin: &'static str) -> Resu
 
         if !authenticated {
             if !auth.pin.is_empty() {
-                record_failed_attempt(&socket_id);
-                warn!("Invalid PIN attempt from socket: {}", socket_id);
+                record_failed_attempt();
+                warn!("Invalid PIN attempt from socket: {:?}", socket.id);
             } else {
-                warn!("Invalid credentials, disconnecting socket: {}", socket_id);
+                warn!("Invalid credentials, disconnecting socket: {:?}", socket.id);
             }
             socket.disconnect().ok();
             return;
         }
 
         if !auth.pin.is_empty() {
-            clear_failed_attempts(&socket_id);
+            clear_failed_attempts();
             let session_token = generate_session_token();
             if save_session_token(&session_token) {
                 let _: std::result::Result<_, _> =
                     socket.emit("session_token", json!({ "token": session_token }));
-                info!("New device paired via PIN: {}", socket_id);
+                info!("New device paired via PIN: {:?}", socket.id);
             }
         }
 
-        info!("Socket connected: {}", socket_id);
+        info!("Socket connected: {:?}", socket.id);
 
         register_all_callbacks(&socket);
 

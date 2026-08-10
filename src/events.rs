@@ -2,12 +2,12 @@ use crate::actuator_methods::{change_actuator_name, unregister_actuator};
 use crate::db::connect;
 use crate::flow_methods::{delete_flow, save_new_flow, toggle_flow, update_flow};
 use crate::intermittent::{start_intermittent, stop_intermittent};
-use crate::helper::{send_message_to_dashboard, DashboardMessageType};
+use crate::helper::{broadcast_event, broadcast_message_to_dashboard, send_message_to_dashboard, DashboardMessageType};
 use crate::models::{Actuator, GetSensorReadings, ToggleFlow, UpdateActuatorState};
 use crate::schema::actuators;
 use crate::schema::actuators::{id, state, updated_at};
 use crate::script_methods::{delete_script, get_scripts, save_new_script, update_script};
-use crate::script_parser::{CommandFunctionResult, Script};
+use crate::script_parser::Script;
 use crate::sensor_methods::{change_sensor_name, get_sensor_readings, unregister_sensor};
 use crate::coap_client;
 use diesel::prelude::*;
@@ -162,38 +162,44 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             return;
         }
 
-        let conn = &mut match connect() {
-            Ok(conn) => conn,
-            Err(e) => {
-                error!("Error connecting to database: {:?}", e);
-                return;
-            }
-        };
+        // Device round-trip (up to 3s) + 2s self-reset must not block the async runtime
+        tokio::task::spawn_blocking(move || {
+            let conn = &mut match connect() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    error!("Error connecting to database: {:?}", e);
+                    return;
+                }
+            };
 
-        let actuator = match actuators::table
-            .filter(id.eq(actuator_id))
-            .get_result::<Actuator>(conn)
-        {
-            Ok(actuator) => actuator,
-            Err(_) => {
-                error!("Error loading actuator");
-                return;
-            }
-        };
+            let actuator = match actuators::table
+                .filter(id.eq(actuator_id))
+                .get_result::<Actuator>(conn)
+            {
+                Ok(actuator) => actuator,
+                Err(_) => {
+                    error!("Error loading actuator");
+                    return;
+                }
+            };
 
-        let payload = match coap_client::send_actuator_command(
-            actuator.get_ip_address(),
-            actuator.get_port(),
-            b"ON-PULSE",
-        ) {
-            Ok(p) => p,
-            Err(_) => {
+            let payload = match coap_client::send_actuator_command(
+                actuator.get_ip_address(),
+                actuator.get_port(),
+                b"ON-PULSE",
+            ) {
+                Ok(p) => p,
+                Err(_) => {
+                    error!("Error changing actuator state");
+                    return;
+                }
+            };
+
+            if payload != "ON-PULSE" {
                 error!("Error changing actuator state");
                 return;
             }
-        };
 
-        if payload == "ON-PULSE" {
             let mut uas = UpdateActuatorState::new(actuator_id, true);
 
             uas.set_updated_at(chrono::Local::now().naive_local());
@@ -205,100 +211,55 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 ))
                 .execute(conn);
 
-            match res {
-                Ok(_) => {}
-                Err(_) => {
-                    error!("Error updating actuator");
+            if res.is_err() {
+                error!("Error updating actuator");
+                return;
+            }
+
+            // Emit the ON phase immediately
+            let now = uas.get_updated_at();
+            broadcast_event(
+                ACTUATOR_STATE_CHANGE_EVENT,
+                json!({
+                    "actuator_id": actuator_id,
+                    "actuator_state": true,
+                    "updated_at": now,
+                }),
+            );
+
+            // Set the actuator back to OFF after the device pulse completes (2s).
+            // Runs on a dedicated thread — never sleep on the async runtime.
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                let conn = &mut match connect() {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        error!("Error connecting to database: {:?}", e);
+                        return;
+                    }
+                };
+
+                let now = chrono::Local::now().naive_local();
+                let res = update(actuators::table.find(actuator_id))
+                    .set((updated_at.eq(now), state.eq(false)))
+                    .execute(conn);
+
+                if res.is_err() {
+                    error!("Error updating actuator after pulse");
                     return;
                 }
-            }
 
-            match s.emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator.get_id(),
-                    "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
-                }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error emitting actuator state change event: {:?}", e);
-                }
-            }
-
-            match s.broadcast().emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator.get_id(),
-                    "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
-                }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    info!(
-                        "Error emitting actuator state change event broadcast: {:?}",
-                        e
-                    );
-                }
-            }
-
-            std::thread::sleep(std::time::Duration::from_millis(2000));
-
-            uas.set_state(false);
-            uas.set_updated_at(chrono::Local::now().naive_local());
-
-            let res = update(actuators::table.find(actuator_id))
-                .set((
-                    updated_at.eq(uas.get_updated_at()),
-                    state.eq(uas.get_state()),
-                ))
-                .execute(conn);
-
-            match res {
-                Ok(_) => {}
-                Err(_) => {
-                    error!("Error updating actuator");
-                    return;
-                }
-            }
-
-            match s.emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator.get_id(),
-                    "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
-                }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error emitting actuator state change event: {:?}", e);
-                }
-            }
-
-            match s.broadcast().emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator.get_id(),
-                    "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
-                }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    info!(
-                        "Error emitting actuator state change event broadcast: {:?}",
-                        e
-                    );
-                }
-            }
-
-            return;
-        }
-
-        error!("Error changing actuator state");
+                broadcast_event(
+                    ACTUATOR_STATE_CHANGE_EVENT,
+                    json!({
+                        "actuator_id": actuator_id,
+                        "actuator_state": false,
+                        "updated_at": now,
+                    }),
+                );
+            });
+        });
     });
 
     socket.on(TOGGLE_ACTUATOR_EVENT, |s: SocketRef, data: Data<i32>| {
@@ -318,35 +279,37 @@ pub fn register_all_callbacks(socket: &SocketRef) {
         // Stop any active intermittent cycling when manually toggling
         stop_intermittent(actuator_id);
 
-        let conn = &mut match connect() {
-            Ok(conn) => conn,
-            Err(e) => {
-                error!("Error connecting to database: {:?}", e);
-                return;
-            }
-        };
+        // Device round-trips (up to 3s each) must not block the async runtime
+        tokio::task::spawn_blocking(move || {
+            let conn = &mut match connect() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    error!("Error connecting to database: {:?}", e);
+                    return;
+                }
+            };
 
-        let actuator = match actuators::table
-            .filter(id.eq(actuator_id))
-            .get_result::<Actuator>(conn)
-        {
-            Ok(actuator) => actuator,
-            Err(_) => {
-                error!("Error loading actuator");
-                return;
-            }
-        };
+            let actuator = match actuators::table
+                .filter(id.eq(actuator_id))
+                .get_result::<Actuator>(conn)
+            {
+                Ok(actuator) => actuator,
+                Err(_) => {
+                    error!("Error loading actuator");
+                    return;
+                }
+            };
 
-        let current_state = match coap_client::ping_device(
-            actuator.get_ip_address(),
-            actuator.get_port(),
-        ) {
-            Ok(p) => p,
-            Err(_) => {
-                error!("Error retrieving actuator state");
-                return;
-            }
-        };
+            let current_state = match coap_client::ping_device(
+                actuator.get_ip_address(),
+                actuator.get_port(),
+            ) {
+                Ok(p) => p,
+                Err(_) => {
+                    error!("Error retrieving actuator state");
+                    return;
+                }
+            };
 
         let command = if current_state == "ON" || current_state == "ON-PULSE" {
             b"OFF".as_slice()
@@ -386,41 +349,23 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 }
             }
 
-            match s.emit(
+            broadcast_event(
                 ACTUATOR_STATE_CHANGE_EVENT,
                 json!({
                     "actuator_id": actuator.get_id(),
                     "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
+                    "updated_at": uas.get_updated_at()
                 }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error emitting actuator state change event: {:?}", e);
-                }
-            }
-
-            match s.broadcast().emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator.get_id(),
-                    "actuator_state": uas.get_state(),
-                    "updated_at": actuator.get_updated_at()
-                }),
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error emitting actuator state change event: {:?}", e);
-                }
-            }
+            );
         } else {
             error!("Error changing actuator state");
         }
+        });
     });
 
     socket.on(
         INTERMITTENT_ACTUATOR_EVENT,
-        |s: SocketRef, data: Data<String>| {
+        |_s: SocketRef, data: Data<String>| {
             let payload = data.0;
 
             #[derive(serde::Deserialize)]
@@ -438,38 +383,18 @@ pub fn register_all_callbacks(socket: &SocketRef) {
                 }
             };
 
+            // start_intermittent emits the ACTUATOR_INTERMITTENT_CHANGE event
             start_intermittent(params.actuator_id, params.on_ms, params.off_ms);
-
-            let now = chrono::Local::now().naive_local();
-            let payload = json!({
-                "actuator_id": params.actuator_id,
-                "intermittent": true,
-                "intermittent_on_ms": params.on_ms,
-                "intermittent_off_ms": params.off_ms,
-                "updated_at": now,
-            });
-
-            let _ = s.emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
-            let _ = s.broadcast().emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
         },
     );
 
     socket.on(
         STOP_INTERMITTENT_ACTUATOR_EVENT,
-        |s: SocketRef, data: Data<i32>| {
+        |_s: SocketRef, data: Data<i32>| {
             let actuator_id = data.0;
 
+            // stop_intermittent emits the ACTUATOR_INTERMITTENT_CHANGE event
             stop_intermittent(actuator_id);
-
-            let now = chrono::Local::now().naive_local();
-            let payload = json!({
-                "actuator_id": actuator_id,
-                "intermittent": false,
-                "updated_at": now,
-            });
-
-            let _ = s.emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
-            let _ = s.broadcast().emit(ACTUATOR_INTERMITTENT_CHANGE_EVENT, &payload);
         },
     );
 
@@ -668,68 +593,28 @@ pub fn register_all_callbacks(socket: &SocketRef) {
             }),
         );
 
-        let res = script.run(&s);
+        // Scripts can run for up to 5 minutes — never block the async runtime
+        let script_id = script.get_id();
+        tokio::task::spawn_blocking(move || {
+            let res = script.run();
 
-        match res {
-            Ok(res) => {
-                if let CommandFunctionResult::Error(e) = res {
-                    let _: Result<(), _> = s.emit(
-                        SCRIPT_STATUS_CHANGE_EVENT,
-                        json!({
-                               "script_id": script.get_id(),
-                               "status": -1,
-                        }),
-                    );
+            let status = if res.is_ok() { 0 } else { -2 };
 
-                    let _: Result<(), _> = s.broadcast().emit(
-                        SCRIPT_STATUS_CHANGE_EVENT,
-                        json!({
-                               "script_id": script.get_id(),
-                               "status": -1,
-                        }),
-                    );
+            broadcast_event(
+                SCRIPT_STATUS_CHANGE_EVENT,
+                json!({
+                       "script_id": script_id,
+                       "status": status,
+                }),
+            );
 
-                    match send_message_to_dashboard(
-                        &s,
-                        format!("Error running script: {:?}", e).to_string(),
-                        DashboardMessageType::Error,
-                    ) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("Error sending message to dashboard: {:?}", e);
-                        }
-                    };
-                }
-            }
-            Err(e) => {
-                let _: Result<(), _> = s.emit(
-                    SCRIPT_STATUS_CHANGE_EVENT,
-                    json!({
-                           "script_id": script.get_id(),
-                           "status": -2,
-                    }),
-                );
-
-                let _: Result<(), _> = s.broadcast().emit(
-                    SCRIPT_STATUS_CHANGE_EVENT,
-                    json!({
-                           "script_id": script.get_id(),
-                           "status": -2,
-                    }),
-                );
-
-                match send_message_to_dashboard(
-                    &s,
+            if let Err(e) = res {
+                broadcast_message_to_dashboard(
                     format!("Error running script: {:?}", e).to_string(),
                     DashboardMessageType::Error,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Error sending message to dashboard: {:?}", e);
-                    }
-                };
+                );
             }
-        }
+        });
     });
 
     socket.on(ADD_SCRIPT_EVENT, |s: SocketRef, data: Data<String>| {

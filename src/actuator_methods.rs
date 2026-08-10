@@ -3,6 +3,7 @@ use diesel::prelude::*;
 use diesel::{insert_into, update};
 
 use crate::db::connect;
+use crate::intermittent::stop_intermittent;
 use crate::models::{
     Actuator, NewActuator, SensorUnregister, UpdateActuatorName, UpdateActuatorState,
 };
@@ -22,14 +23,15 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
 
     let mut new_actuator = from_str::<NewActuator>(&payload)?;
 
-    // Validate IP address
+    // Validate IP address and port
     validation::validate_ip_address(new_actuator.get_ip_address())
         .map_err(|e| Error::msg(e))?;
+    validation::validate_port(new_actuator.get_port()).map_err(|e| Error::msg(e))?;
 
     new_actuator.set_created_at(chrono::Local::now().naive_local());
 
     if let Ok(actuator) = actuators::table
-        .filter(ip_address.like(&new_actuator.get_ip_address()))
+        .filter(ip_address.eq(&new_actuator.get_ip_address()))
         .filter(port.eq(&new_actuator.get_port()))
         .filter(pulse.eq(&new_actuator.get_pulse()))
         .get_result(conn)
@@ -51,7 +53,7 @@ pub fn register_actuator(payload: String) -> Result<Actuator> {
     }
 
     let actuator = actuators::table
-        .filter(ip_address.like(&new_actuator.get_ip_address()))
+        .filter(ip_address.eq(&new_actuator.get_ip_address()))
         .filter(port.eq(&new_actuator.get_port()))
         .filter(pulse.eq(&new_actuator.get_pulse()))
         .get_result(conn);
@@ -77,6 +79,9 @@ pub fn unregister_actuator(payload: String) -> Result<Actuator> {
             return Err(Error::from(e));
         }
     };
+
+    // Stop any running intermittent cycle before removing the device
+    stop_intermittent(actuator_unregister.get_id());
 
     let res =
         diesel::delete(actuators::table.filter(id.eq(actuator_unregister.get_id()))).execute(conn);

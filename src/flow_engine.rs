@@ -3,12 +3,12 @@ use crate::intermittent::{start_intermittent, stop_intermittent};
 use crate::models::Flow;
 use crate::schema::actuators;
 use crate::db::connect;
+use crate::helper::broadcast_event;
 use crate::events::ACTUATOR_STATE_CHANGE_EVENT;
 use crate::coap_client;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use socketioxide::SocketIo;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use log::{error, info};
@@ -67,7 +67,7 @@ impl NodeValue {
     }
 }
 
-pub fn evaluate_flows_for_sensor(sensor_id: i32, sensor_value: &str, socket: &SocketIo) {
+pub fn evaluate_flows_for_sensor(sensor_id: i32, sensor_value: &str) {
     let flows = match get_enabled_flows() {
         Ok(f) => f,
         Err(e) => {
@@ -96,17 +96,11 @@ pub fn evaluate_flows_for_sensor(sensor_id: i32, sensor_value: &str, socket: &So
             continue;
         }
 
-        evaluate_flow(&flow, &graph, sensor_id, value, socket);
+        evaluate_flow(&flow, &graph, sensor_id, value);
     }
 }
 
-fn evaluate_flow(
-    flow: &Flow,
-    graph: &FlowGraph,
-    trigger_sensor_id: i32,
-    trigger_value: f64,
-    socket: &SocketIo,
-) {
+fn evaluate_flow(flow: &Flow, graph: &FlowGraph, trigger_sensor_id: i32, trigger_value: f64) {
     let sorted = match topological_sort(graph) {
         Some(s) => s,
         None => {
@@ -129,70 +123,91 @@ fn evaluate_flow(
         node_outputs.insert(node_id.clone(), outputs);
     }
 
-    let mut states = FLOW_OUTPUT_STATES.lock().unwrap();
-    let prev_states = states.entry(flow.get_id()).or_insert_with(HashMap::new);
+    // Collect pending actuator actions under the lock, then execute them without holding it
+    struct PendingAction {
+        actuator_id: i32,
+        new_state: bool,
+        is_pulse: bool,
+        is_intermittent: bool,
+        intermittent_on_ms: i32,
+        intermittent_off_ms: i32,
+    }
 
-    for node in &graph.nodes {
-        if node.node_type != "actuator_output" {
-            continue;
-        }
+    let mut pending: Vec<PendingAction> = Vec::new();
 
-        let actuator_id = match node.data.get("actuator_id").and_then(|v| v.as_i64()) {
-            Some(id) => id as i32,
-            None => continue,
-        };
+    {
+        let mut states = FLOW_OUTPUT_STATES.lock().unwrap();
+        let prev_states = states.entry(flow.get_id()).or_insert_with(HashMap::new);
 
-        let outputs = match node_outputs.get(&node.id) {
-            Some(o) => o,
-            None => continue,
-        };
-
-        let new_state = outputs
-            .get("state")
-            .map(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let prev_state = prev_states.get(&node.id).copied().unwrap_or(!new_state);
-
-        if new_state != prev_state {
-            prev_states.insert(node.id.clone(), new_state);
-
-            let is_pulse = node
-                .data
-                .get("pulse")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            let is_intermittent = node
-                .data
-                .get("intermittent")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            // Pulse actuators only fire on rising edge (false→true)
-            if is_pulse && !new_state {
+        for node in &graph.nodes {
+            if node.node_type != "actuator_output" {
                 continue;
             }
 
-            if is_intermittent {
-                if new_state {
-                    let on_ms = node
+            let actuator_id = match node.data.get("actuator_id").and_then(|v| v.as_i64()) {
+                Some(id) => id as i32,
+                None => continue,
+            };
+
+            let outputs = match node_outputs.get(&node.id) {
+                Some(o) => o,
+                None => continue,
+            };
+
+            let new_state = outputs
+                .get("state")
+                .map(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let prev_state = prev_states.get(&node.id).copied().unwrap_or(!new_state);
+
+            if new_state != prev_state {
+                prev_states.insert(node.id.clone(), new_state);
+
+                let is_pulse = node
+                    .data
+                    .get("pulse")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                // Pulse actuators only fire on rising edge (false→true)
+                if is_pulse && !new_state {
+                    continue;
+                }
+
+                pending.push(PendingAction {
+                    actuator_id,
+                    new_state,
+                    is_pulse,
+                    is_intermittent: node
+                        .data
+                        .get("intermittent")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    intermittent_on_ms: node
                         .data
                         .get("intermittent_on_ms")
                         .and_then(|v| v.as_i64())
-                        .unwrap_or(1000) as i32;
-                    let off_ms = node
+                        .unwrap_or(1000) as i32,
+                    intermittent_off_ms: node
                         .data
                         .get("intermittent_off_ms")
                         .and_then(|v| v.as_i64())
-                        .unwrap_or(1000) as i32;
-                    start_intermittent(actuator_id, on_ms, off_ms);
-                } else {
-                    stop_intermittent(actuator_id);
-                }
-            } else {
-                send_actuator_command(actuator_id, new_state, is_pulse, socket);
+                        .unwrap_or(1000) as i32,
+                });
             }
+        }
+    }
+
+    for action in pending {
+        if action.is_intermittent {
+            if action.new_state {
+                start_intermittent(action.actuator_id, action.intermittent_on_ms, action.intermittent_off_ms);
+            } else {
+                stop_intermittent(action.actuator_id);
+            }
+        } else {
+            send_actuator_command(action.actuator_id, action.new_state, action.is_pulse);
         }
     }
 }
@@ -353,7 +368,7 @@ pub fn topological_sort(graph: &FlowGraph) -> Option<Vec<String>> {
     }
 }
 
-fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool, socket: &SocketIo) {
+fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool) {
     let conn = &mut match connect() {
         Ok(c) => c,
         Err(e) => {
@@ -389,23 +404,50 @@ fn send_actuator_command(actuator_id: i32, state: bool, pulse: bool, socket: &So
         Ok(payload) => {
             let new_state = payload == "ON" || payload == "ON-PULSE";
 
+            let now = chrono::Local::now().naive_local();
             let _ = diesel::update(actuators::table.find(actuator_id))
                 .set((
                     actuators::state.eq(new_state),
-                    actuators::updated_at.eq(chrono::Local::now().naive_local()),
+                    actuators::updated_at.eq(now),
                 ))
                 .execute(conn);
 
-            if let Some(ns) = socket.of("/") {
-                let now = chrono::Local::now().naive_local();
-                let _ = ns.emit(
-                    ACTUATOR_STATE_CHANGE_EVENT,
-                    json!({
-                        "actuator_id": actuator_id,
-                        "actuator_state": new_state,
-                        "updated_at": now,
-                    }),
-                );
+            broadcast_event(
+                ACTUATOR_STATE_CHANGE_EVENT,
+                json!({
+                    "actuator_id": actuator_id,
+                    "actuator_state": new_state,
+                    "updated_at": now,
+                }),
+            );
+
+            // A pulse self-resets on the device after ~2s — mirror that in DB + events
+            if pulse {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                    let conn = &mut match connect() {
+                        Ok(c) => c,
+                        Err(_) => return,
+                    };
+
+                    let reset_now = chrono::Local::now().naive_local();
+                    let _ = diesel::update(actuators::table.find(actuator_id))
+                        .set((
+                            actuators::state.eq(false),
+                            actuators::updated_at.eq(reset_now),
+                        ))
+                        .execute(conn);
+
+                    broadcast_event(
+                        ACTUATOR_STATE_CHANGE_EVENT,
+                        json!({
+                            "actuator_id": actuator_id,
+                            "actuator_state": false,
+                            "updated_at": reset_now,
+                        }),
+                    );
+                });
             }
 
             info!(

@@ -1,15 +1,11 @@
 use crate::CoAPClient;
 use coap_lite::CoapResponse;
-use log::{debug, error, warn};
+use log::{debug, error};
 use std::io;
-use std::time::Duration;
-
-const COAP_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Send a CoAP GET request to a device.
 ///
 /// This is the single point of entry for all outbound CoAP GET requests.
-/// It handles plain CoAP (and will route through DTLS when the device supports it).
 pub fn coap_get(ip: &str, port: i16) -> io::Result<CoapResponse> {
     let address = format!("coap://{}:{}", ip, port);
     debug!("CoAP GET -> {}", address);

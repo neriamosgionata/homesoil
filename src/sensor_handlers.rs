@@ -192,11 +192,12 @@ pub fn sensor_read_handler<'a>(
                     }
                 }
 
-                evaluate_flows_for_sensor(
-                    sensor_read.get_sensor_id(),
-                    sensor_read.get_sensor_value(),
-                    socket,
-                );
+                // Flow evaluation does blocking DB + CoAP work — run it off the async runtime
+                let flow_sensor_id = sensor_read.get_sensor_id();
+                let flow_sensor_value = sensor_read.get_sensor_value().to_string();
+                tokio::task::spawn_blocking(move || {
+                    evaluate_flows_for_sensor(flow_sensor_id, &flow_sensor_value);
+                });
 
                 "OK".to_string()
             }
@@ -274,6 +275,10 @@ pub fn sensor_update_handler<'a>(
 pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
     match coap_client::ping_device(sensor.get_ip_address(), sensor.get_port()) {
         Ok(_) => {
+            if sensor.get_online() {
+                return;
+            }
+
             let conn = &mut match connect() {
                 Ok(conn) => conn,
                 Err(_) => {
@@ -328,6 +333,10 @@ pub fn ping_sensor(sensor: &Sensor, socket: &SocketIo) {
             }
         }
         Err(_) => {
+            if !sensor.get_online() {
+                return;
+            }
+
             let conn = &mut match connect() {
                 Ok(conn) => conn,
                 Err(_) => {

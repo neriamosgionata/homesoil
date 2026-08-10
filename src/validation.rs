@@ -16,11 +16,10 @@ pub fn validate_ip_address(ip: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate a port number. Must be in the range 1024-65535.
+/// Validate a port number. Must be within the i16 range and non-zero.
 pub fn validate_port(port: i16) -> Result<(), String> {
-    if port < 1024 || port > 32767 {
-        // i16 max is 32767
-        return Err(format!("Port out of valid range (1024-32767): {}", port));
+    if port <= 0 {
+        return Err(format!("Port out of valid range (1-32767): {}", port));
     }
     Ok(())
 }

@@ -1,54 +1,62 @@
 use crate::db::connect;
-use crate::events::ACTUATOR_STATE_CHANGE_EVENT;
+use crate::events::{ACTUATOR_INTERMITTENT_CHANGE_EVENT, ACTUATOR_STATE_CHANGE_EVENT};
+use crate::helper::broadcast_event;
 use crate::schema::actuators;
 use crate::coap_client;
 use diesel::prelude::*;
 use serde_json::json;
-use socketioxide::SocketIo;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
-use log::{error, info};
+use log::info;
 
 struct IntermittentHandle {
+    handle_id: u64,
     stop: Arc<AtomicBool>,
 }
+
+static NEXT_HANDLE_ID: AtomicU64 = AtomicU64::new(1);
 
 static INTERMITTENT_THREADS: LazyLock<Mutex<HashMap<i32, IntermittentHandle>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-static SOCKET_IO: OnceLock<SocketIo> = OnceLock::new();
+fn emit_intermittent_change(actuator_id: i32, intermittent: bool, on_ms: Option<i32>, off_ms: Option<i32>) {
+    let mut payload = json!({
+        "actuator_id": actuator_id,
+        "intermittent": intermittent,
+        "updated_at": chrono::Local::now().naive_local(),
+    });
 
-pub fn set_socket_io(io: SocketIo) {
-    let _ = SOCKET_IO.set(io);
-}
+    // Only include timings on start — clients keep their last values on stop
+    if let (Some(on), Some(off)) = (on_ms, off_ms) {
+        payload["intermittent_on_ms"] = json!(on);
+        payload["intermittent_off_ms"] = json!(off);
+    }
 
-fn get_socket_io() -> Option<&'static SocketIo> {
-    SOCKET_IO.get()
+    broadcast_event(ACTUATOR_INTERMITTENT_CHANGE_EVENT, payload);
 }
 
 pub fn start_intermittent(actuator_id: i32, on_ms: i32, off_ms: i32) {
     stop_intermittent(actuator_id);
 
-    let socket = match get_socket_io() {
-        Some(s) => s.clone(),
-        None => {
-            error!("Intermittent: SocketIo not initialized");
-            return;
-        }
-    };
-
     let stop = Arc::new(AtomicBool::new(false));
     let stop_clone = stop.clone();
+    let handle_id = NEXT_HANDLE_ID.fetch_add(1, Ordering::Relaxed);
 
     thread::spawn(move || {
-        run_intermittent_loop(actuator_id, on_ms, off_ms, stop_clone, &socket);
+        run_intermittent_loop(actuator_id, on_ms, off_ms, handle_id, stop_clone);
     });
 
     let mut threads = INTERMITTENT_THREADS.lock().unwrap();
-    threads.insert(actuator_id, IntermittentHandle { stop });
+    threads.insert(
+        actuator_id,
+        IntermittentHandle {
+            handle_id,
+            stop,
+        },
+    );
 
     // Update DB
     let conn = &mut match connect() {
@@ -65,6 +73,8 @@ pub fn start_intermittent(actuator_id: i32, on_ms: i32, off_ms: i32) {
         ))
         .execute(conn);
 
+    emit_intermittent_change(actuator_id, true, Some(on_ms), Some(off_ms));
+
     info!(
         "Intermittent started for actuator {} (on={}ms, off={}ms)",
         actuator_id, on_ms, off_ms
@@ -73,22 +83,33 @@ pub fn start_intermittent(actuator_id: i32, on_ms: i32, off_ms: i32) {
 
 pub fn stop_intermittent(actuator_id: i32) {
     let mut threads = INTERMITTENT_THREADS.lock().unwrap();
-    if let Some(handle) = threads.remove(&actuator_id) {
+
+    let had_thread = if let Some(handle) = threads.remove(&actuator_id) {
         handle.stop.store(true, Ordering::Relaxed);
+        true
+    } else {
+        false
+    };
+    drop(threads);
 
-        // Update DB
-        let conn = &mut match connect() {
-            Ok(c) => c,
-            Err(_) => return,
-        };
+    // Always clear the DB flag — also fixes stale `intermittent=true` after a restart
+    let conn = &mut match connect() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
 
-        let _ = diesel::update(actuators::table.find(actuator_id))
-            .set((
-                actuators::intermittent.eq(false),
-                actuators::updated_at.eq(chrono::Local::now().naive_local()),
-            ))
-            .execute(conn);
+    let _ = diesel::update(actuators::table.find(actuator_id))
+        .set((
+            actuators::intermittent.eq(false),
+            actuators::updated_at.eq(chrono::Local::now().naive_local()),
+        ))
+        .execute(conn);
 
+    // Notify clients regardless of whether a loop thread existed.
+    // Omits on/off ms so clients keep their last known timing values.
+    emit_intermittent_change(actuator_id, false, None, None);
+
+    if had_thread {
         info!("Intermittent stopped for actuator {}", actuator_id);
     }
 }
@@ -102,27 +123,37 @@ fn run_intermittent_loop(
     actuator_id: i32,
     on_ms: i32,
     off_ms: i32,
+    handle_id: u64,
     stop: Arc<AtomicBool>,
-    socket: &SocketIo,
 ) {
     while !stop.load(Ordering::Relaxed) {
         // Turn ON
-        send_and_update(actuator_id, true, socket);
+        send_and_update(actuator_id, true);
 
         if sleep_interruptible(on_ms as u64, &stop) {
             break;
         }
 
         // Turn OFF
-        send_and_update(actuator_id, false, socket);
+        send_and_update(actuator_id, false);
 
         if sleep_interruptible(off_ms as u64, &stop) {
             break;
         }
     }
 
-    // Ensure OFF when stopping
-    send_and_update(actuator_id, false, socket);
+    // Ensure OFF when stopping — unless a newer intermittent cycle replaced us.
+    // (The replacement cycle controls the actuator from here on.)
+    let replaced = INTERMITTENT_THREADS
+        .lock()
+        .map(|threads| {
+            matches!(threads.get(&actuator_id), Some(h) if h.handle_id != handle_id)
+        })
+        .unwrap_or(false);
+
+    if !replaced {
+        send_and_update(actuator_id, false);
+    }
 }
 
 fn sleep_interruptible(ms: u64, stop: &AtomicBool) -> bool {
@@ -136,7 +167,7 @@ fn sleep_interruptible(ms: u64, stop: &AtomicBool) -> bool {
     stop.load(Ordering::Relaxed)
 }
 
-fn send_and_update(actuator_id: i32, state: bool, socket: &SocketIo) {
+fn send_and_update(actuator_id: i32, state: bool) {
     let conn = &mut match connect() {
         Ok(c) => c,
         Err(_) => return,
@@ -164,15 +195,13 @@ fn send_and_update(actuator_id: i32, state: bool, socket: &SocketIo) {
             ))
             .execute(conn);
 
-        if let Some(ns) = socket.of("/") {
-            let _ = ns.emit(
-                ACTUATOR_STATE_CHANGE_EVENT,
-                json!({
-                    "actuator_id": actuator_id,
-                    "actuator_state": new_state,
-                    "updated_at": now,
-                }),
-            );
-        }
+        broadcast_event(
+            ACTUATOR_STATE_CHANGE_EVENT,
+            json!({
+                "actuator_id": actuator_id,
+                "actuator_state": new_state,
+                "updated_at": now,
+            }),
+        );
     }
 }

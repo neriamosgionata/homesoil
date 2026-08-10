@@ -60,45 +60,43 @@ fn test_generate_session_token_randomness() {
 
 #[test]
 fn test_rate_limit_allows_initial_request() {
-    assert!(check_rate_limit("test_initial_12345"));
+    clear_failed_attempts();
+    assert!(check_rate_limit());
 }
 
 #[test]
 fn test_rate_limit_blocks_after_max_attempts() {
-    let id = "test_block_99999";
-    clear_failed_attempts(id);
+    clear_failed_attempts();
 
-    for _ in 0..3 {
-        record_failed_attempt(id);
+    for _ in 0..5 {
+        record_failed_attempt();
     }
 
-    assert!(!check_rate_limit(id), "Should be rate limited after 3 attempts");
+    assert!(!check_rate_limit(), "Should be rate limited after 5 attempts");
 }
 
 #[test]
 fn test_rate_limit_clear_resets() {
-    let id = "test_clear_88888";
-    clear_failed_attempts(id);
+    clear_failed_attempts();
 
-    for _ in 0..3 {
-        record_failed_attempt(id);
+    for _ in 0..5 {
+        record_failed_attempt();
     }
-    assert!(!check_rate_limit(id));
+    assert!(!check_rate_limit());
 
-    clear_failed_attempts(id);
-    assert!(check_rate_limit(id), "Should be allowed after clearing");
+    clear_failed_attempts();
+    assert!(check_rate_limit(), "Should be allowed after clearing");
 }
 
 #[test]
 fn test_rate_limit_allows_below_max() {
-    let id = "test_below_77777";
-    clear_failed_attempts(id);
+    clear_failed_attempts();
 
     for _ in 0..2 {
-        record_failed_attempt(id);
+        record_failed_attempt();
     }
 
-    assert!(check_rate_limit(id), "Should still be allowed with 2 attempts");
+    assert!(check_rate_limit(), "Should still be allowed with 2 attempts");
 }
 
 #[test]

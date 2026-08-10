@@ -40,12 +40,15 @@ pub fn save_new_script(payload: String) -> Result<Script> {
     Ok(new_script)
 }
 
-pub fn delete_script(id: i32) -> Result<()> {
+pub fn delete_script(id: i32) -> Result<Script> {
     let conn = &mut connect()?;
+
+    // Load the script first so callers can emit its id after deletion
+    let script = scripts::table.find(id).first::<Script>(conn)?;
 
     diesel::delete(scripts::table.find(id)).execute(conn)?;
 
-    Ok(())
+    Ok(script)
 }
 
 pub fn update_script(payload: String) -> Result<Script> {
@@ -53,12 +56,15 @@ pub fn update_script(payload: String) -> Result<Script> {
 
     let script = from_str::<UpdateScript>(&payload)?;
 
+    // Trust the payload for content but stamp the timestamp server-side
+    let now = chrono::Local::now().naive_local();
+
     diesel::update(scripts::table.find(script.get_id()))
         .set((
             scripts::title.eq(&script.get_title()),
             scripts::code.eq(&script.get_code()),
             scripts::schedule.eq(script.get_schedule()),
-            scripts::updated_at.eq(script.get_updated_at()),
+            scripts::updated_at.eq(now),
         ))
         .execute(conn)?;
 

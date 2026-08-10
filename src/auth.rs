@@ -5,66 +5,56 @@ use diesel::prelude::*;
 use log::{info, warn};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 const SESSION_TOKEN_MAX_AGE_DAYS: i64 = 30;
-const MAX_PIN_ATTEMPTS: u32 = 3;
-const BASE_LOCKOUT_SECONDS: i64 = 60;
+// Global PIN attempt limiting: a fresh socket id is minted per connection, so
+// per-connection counters are bypassable. A global window still throttles
+// brute-force attempts across reconnects.
+const MAX_PIN_ATTEMPTS_PER_MINUTE: u32 = 5;
 const PIN_EXPIRY_SECONDS: i64 = 600; // 10 minutes
 
-static FAILED_ATTEMPTS: Mutex<Option<HashMap<String, (u32, chrono::DateTime<Utc>)>>> =
-    Mutex::new(None);
+static FAILED_ATTEMPTS: LazyLock<Mutex<(u32, chrono::DateTime<Utc>)>> =
+    LazyLock::new(|| Mutex::new((0, Utc::now())));
 
 static PIN_CREATED_AT: Mutex<Option<chrono::DateTime<Utc>>> = Mutex::new(None);
 
-fn with_attempts<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut HashMap<String, (u32, chrono::DateTime<Utc>)>) -> R,
-{
+static CURRENT_PIN: Mutex<Option<String>> = Mutex::new(None);
+
+/// True if PIN pairing attempts are allowed right now.
+/// Denies all pairing when more than MAX_PIN_ATTEMPTS_PER_MINUTE have failed
+/// within the current 60-second window.
+pub fn check_rate_limit() -> bool {
     let mut guard = FAILED_ATTEMPTS.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(HashMap::new());
+    let (count, window_start) = *guard;
+
+    if Utc::now() - window_start > Duration::seconds(60) {
+        *guard = (0, Utc::now());
+        return true;
     }
-    f(guard.as_mut().unwrap())
+
+    if count >= MAX_PIN_ATTEMPTS_PER_MINUTE {
+        warn!(
+            "Rate limit active: {} failed PIN attempts this minute",
+            count
+        );
+        return false;
+    }
+
+    true
 }
 
-pub fn check_rate_limit(identifier: &str) -> bool {
-    with_attempts(|attempts| {
-        if let Some((count, last_attempt)) = attempts.get(identifier) {
-            if *count >= MAX_PIN_ATTEMPTS {
-                // Exponential backoff: 60s, 300s, 3600s
-                let multiplier = (*count - MAX_PIN_ATTEMPTS + 1) as i64;
-                let lockout = BASE_LOCKOUT_SECONDS * (5_i64.pow(multiplier.min(3) as u32 - 1)).max(1);
-                let elapsed = Utc::now() - *last_attempt;
-                if elapsed < Duration::seconds(lockout) {
-                    warn!(
-                        "Rate limit active for {}: {} attempts, lockout {}s",
-                        identifier, count, lockout
-                    );
-                    return false;
-                }
-                // Lockout expired, but don't clear — keep escalating
-            }
-        }
-        true
-    })
+pub fn record_failed_attempt() {
+    let mut guard = FAILED_ATTEMPTS.lock().unwrap();
+    if Utc::now() - guard.1 > Duration::seconds(60) {
+        *guard = (0, Utc::now());
+    }
+    guard.0 += 1;
 }
 
-pub fn record_failed_attempt(identifier: &str) {
-    with_attempts(|attempts| {
-        let entry = attempts
-            .entry(identifier.to_string())
-            .or_insert((0, Utc::now()));
-        entry.0 += 1;
-        entry.1 = Utc::now();
-    });
-}
-
-pub fn clear_failed_attempts(identifier: &str) {
-    with_attempts(|attempts| {
-        attempts.remove(identifier);
-    });
+pub fn clear_failed_attempts() {
+    let mut guard = FAILED_ATTEMPTS.lock().unwrap();
+    *guard = (0, Utc::now());
 }
 
 /// Record when the PIN was generated so we can enforce expiry.
@@ -83,6 +73,21 @@ pub fn is_pin_expired() -> bool {
         }
         None => true, // No PIN created — treat as expired
     }
+}
+
+/// Current pairing PIN. None until first generation.
+pub fn get_current_pin() -> Option<String> {
+    CURRENT_PIN.lock().unwrap().clone()
+}
+
+/// Generate a new PIN, record its creation time, and publish it for use by the socket server.
+/// Returns the new PIN so callers can log it.
+pub fn rotate_pin() -> String {
+    let pin = generate_pin();
+    *CURRENT_PIN.lock().unwrap() = Some(pin.clone());
+    set_pin_created_at();
+    info!("New pairing PIN generated: {}", pin);
+    pin
 }
 
 pub fn generate_pin() -> String {
