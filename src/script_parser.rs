@@ -29,11 +29,6 @@ fn is_script_timed_out() -> bool {
     })
 }
 
-#[cfg(windows)]
-const COMMAND_END: &str = "\r\n";
-#[cfg(not(windows))]
-const COMMAND_END: &str = "\n";
-
 type Command = &'static str;
 
 const COMMAND_ACTIVATE_ACTUATOR: Command = "ACTIVATE";
@@ -590,6 +585,8 @@ fn parse_command_function(command: Command) -> CommandFunction {
 
             CommandFunctionResult::Continue
         }),
+        INSTRUCTION_BREAK => Box::new(|_args, _variables| CommandFunctionResult::Break),
+        INSTRUCTION_CONTINUE => Box::new(|_args, _variables| CommandFunctionResult::Continue),
         _ => Box::new(|_args, _variables| {
             CommandFunctionResult::Error("Unknown command".to_string())
         }),
@@ -912,6 +909,8 @@ fn parse_command(s: String) -> Result<(Command, Option<Args>)> {
         COMMAND_INTERMITTENT_ACTUATOR => COMMAND_INTERMITTENT_ACTUATOR,
         COMMAND_STOP_INTERMITTENT_ACTUATOR => COMMAND_STOP_INTERMITTENT_ACTUATOR,
         COMMAND_DELAY => COMMAND_DELAY,
+        INSTRUCTION_BREAK => INSTRUCTION_BREAK,
+        INSTRUCTION_CONTINUE => INSTRUCTION_CONTINUE,
         _ => {
             return Err(anyhow!("Unknown command: {}", command));
         }
@@ -942,22 +941,25 @@ pub enum Value {
 
 impl Value {
     pub fn to_string(&self, variables: &Variables) -> String {
+        self.to_string_with_depth(variables, 0)
+    }
+
+    fn to_string_with_depth(&self, variables: &Variables, depth: usize) -> String {
+        // Variable references may form cycles ($a -> $b -> $a). Stop resolving
+        // past a bounded depth instead of recursing forever.
+        const MAX_VARIABLE_DEPTH: usize = 16;
+
         match self {
             Value::None => "".to_string(),
             Value::String(s) => s.to_string(),
-            Value::Variable(s) => {
-                // Resolve variable references with a bounded depth to avoid cycles
-                let mut current = s.as_str();
-                let mut depth = 0;
-                loop {
-                    match variables.get(current) {
-                        Some(Value::Variable(next)) if depth < 16 => {
-                            current = next.as_str();
-                            depth += 1;
-                        }
-                        Some(v) => return v.to_string(variables),
-                        None => return String::new(),
-                    }
+            Value::Variable(name) => {
+                if depth >= MAX_VARIABLE_DEPTH {
+                    return String::new();
+                }
+
+                match variables.get(name) {
+                    Some(value) => value.to_string_with_depth(variables, depth + 1),
+                    None => String::new(),
                 }
             }
             Value::Int32(n) => n.to_string(),
@@ -966,13 +968,12 @@ impl Value {
             Value::Float64(n) => n.to_string(),
             Value::Boolean(b) => b.to_string(),
             Value::Array(array) => {
-                let mut s = "[".to_string();
-                for value in array {
-                    s.push_str(value.to_string(variables).as_str());
-                    s += ", "
-                }
-                s += "]";
-                s
+                let values = array
+                    .iter()
+                    .map(|value| value.to_string_with_depth(variables, depth))
+                    .collect::<Vec<String>>();
+
+                format!("[{}]", values.join(", "))
             }
         }
     }
@@ -1091,83 +1092,159 @@ enum ScriptExecution {
     Block(ScriptBlock),
 }
 
-fn remove_tabs_and_multiple_whitespace(s: String) -> String {
-    let regex = Regex::new(r"\s+").unwrap();
-    regex
-        .replace_all(s.replace("\t", " ").as_str(), " ")
-        .to_string()
+fn is_block_instruction(instruction: &str) -> bool {
+    matches!(
+        instruction,
+        INSTRUCTION_IF | INSTRUCTION_LOOP | INSTRUCTION_WHILE_LOOP
+    )
 }
 
-fn parse_commands(fragment: String) -> Result<Vec<ScriptExecution>> {
-    let splitted = fragment.split(COMMAND_END);
+/// Parse a body of script lines. The DSL is line-oriented: every command is a
+/// single line, and blocks are delimited by `THEN` and a matching `END`.
+/// Nesting is tracked by depth so sequential blocks don't swallow each other.
+fn parse_execution_lines(lines: &[&str]) -> Result<Vec<ScriptExecution>> {
+    let mut executions = Vec::new();
+    let mut i = 0;
 
-    let mut vec = Vec::new();
+    while i < lines.len() {
+        let line = lines[i].trim();
 
-    for instruction in splitted {
-        let trimmed = instruction.trim();
-
-        if trimmed.is_empty() {
+        if line.is_empty() {
+            i += 1;
             continue;
         }
 
-        let c = ScriptCommand::new(trimmed.to_owned());
+        let tokens = tokenize(line);
+        let head = tokens.first().map(String::as_str).unwrap_or_default();
 
-        let c = match c {
-            Ok(res) => res,
-            Err(e) => {
-                return Err(e);
+        if is_block_instruction(head) {
+            // The opening THEN is either the last token of this line or the
+            // first token of the next non-empty line.
+            let (header_tokens, inline_body, body_start) =
+                if let Some(then_index) = tokens.iter().position(|t| t == INSTRUCTION_BLOCK_START) {
+                    (
+                        tokens[..then_index].to_vec(),
+                        tokens[then_index + 1..].to_vec(),
+                        i + 1,
+                    )
+                } else {
+                    let mut j = i + 1;
+
+                    while j < lines.len() && lines[j].trim().is_empty() {
+                        j += 1;
+                    }
+
+                    if j >= lines.len() || lines[j].trim() != INSTRUCTION_BLOCK_START {
+                        return Err(anyhow!("Missing block start (THEN) after {}", head));
+                    }
+
+                    (tokens.clone(), Vec::new(), j + 1)
+                };
+
+            // Find the END belonging to this block, counting nested blocks.
+            let mut depth = 1;
+            let mut end = None;
+            let mut j = body_start;
+
+            while j < lines.len() {
+                let candidate = lines[j].trim();
+
+                if !candidate.is_empty() {
+                    let candidate_tokens = tokenize(candidate);
+                    let candidate_head = candidate_tokens
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or_default();
+
+                    if candidate_head == INSTRUCTION_BLOCK_END {
+                        depth -= 1;
+
+                        if depth == 0 {
+                            end = Some(j);
+                            break;
+                        }
+                    } else if is_block_instruction(candidate_head) {
+                        // An inline THEN opens the nested block immediately;
+                        // otherwise its standalone THEN line increments depth.
+                        if candidate_tokens
+                            .iter()
+                            .any(|t| t == INSTRUCTION_BLOCK_START)
+                        {
+                            depth += 1;
+                        }
+                    } else if candidate_head == INSTRUCTION_BLOCK_START {
+                        depth += 1;
+                    }
+                }
+
+                j += 1;
             }
-        };
 
-        vec.push(ScriptExecution::Command(c));
+            let end = end.ok_or_else(|| anyhow!("Missing block end (END) for {}", head))?;
+
+            let mut inner_lines: Vec<&str> = Vec::new();
+            let inline_body_line;
+
+            if !inline_body.is_empty() {
+                inline_body_line = inline_body.join(" ");
+                inner_lines.push(inline_body_line.as_str());
+            }
+
+            inner_lines.extend_from_slice(&lines[body_start..end]);
+
+            let inner_executions = parse_execution_lines(&inner_lines)?;
+            let block = ScriptBlock::new(header_tokens.join(" "), inner_executions)?;
+
+            executions.push(ScriptExecution::Block(block));
+            i = end + 1;
+            continue;
+        }
+
+        if head == INSTRUCTION_BLOCK_START || head == INSTRUCTION_BLOCK_END {
+            return Err(anyhow!("Unexpected {}", head));
+        }
+
+        executions.push(ScriptExecution::Command(ScriptCommand::new(line.to_string())?));
+        i += 1;
     }
 
-    Ok(vec)
+    Ok(executions)
 }
 
-fn parse_block(fragment: String) -> Result<Vec<ScriptExecution>> {
-    let start_index = match fragment.find(INSTRUCTION_BLOCK_START) {
-        Some(i) => i,
-        None => return Err(anyhow!("Missing block start (THEN)")),
-    };
-    let end_index = match fragment.rfind(INSTRUCTION_BLOCK_END) {
-        Some(i) => i,
-        None => return Err(anyhow!("Missing block end (END)")),
-    };
+/// Parse the code of a script into executable steps. The script must start
+/// with a standalone RUN line and end with a standalone STOP line; anything
+/// else (including RUN/STOP inside strings) is preserved verbatim.
+fn parse_script_code(script_id: i32, code: &str) -> Result<Script> {
+    let lines: Vec<&str> = code.lines().collect();
+    let mut start = 0;
+    let mut end = lines.len();
 
-    if end_index <= start_index + INSTRUCTION_BLOCK_START.len() {
-        return Err(anyhow!("Malformed block"));
+    while start < end && lines[start].trim().is_empty() {
+        start += 1;
     }
 
-    let inner_executions = parse_execution_step(
-        fragment[start_index + INSTRUCTION_BLOCK_START.len()..end_index].to_string(),
-    );
-
-    let inner_executions = match inner_executions {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(e);
-        }
-    };
-
-    let s = ScriptBlock::new(fragment[0..start_index].to_string(), inner_executions);
-
-    let s = match s {
-        Ok(res) => res,
-        Err(e) => {
-            return Err(e);
-        }
-    };
-
-    Ok(vec![ScriptExecution::Block(s)])
-}
-
-fn parse_execution_step(fragment: String) -> Result<Vec<ScriptExecution>> {
-    if fragment.contains(INSTRUCTION_BLOCK_START) && fragment.contains(INSTRUCTION_BLOCK_END) {
-        return parse_block(fragment);
+    while end > start && lines[end - 1].trim().is_empty() {
+        end -= 1;
     }
 
-    parse_commands(fragment)
+    if start >= end {
+        return Err(Error::msg("Script does not contain main block"));
+    }
+
+    if lines[start].trim() != MAIN_BLOCK_START {
+        return Err(Error::msg("Script must start with RUN"));
+    }
+
+    if lines[end - 1].trim() != MAIN_BLOCK_END {
+        return Err(Error::msg("Script must end with STOP"));
+    }
+
+    let executions = parse_execution_lines(&lines[start + 1..end - 1])?;
+
+    Ok(Script {
+        id: script_id,
+        executions,
+    })
 }
 
 /// Resets the per-thread script start time when the run scope exits — even on panic.
@@ -1193,26 +1270,7 @@ impl Script {
             }
         };
 
-        let script = script_model.get_code().to_string();
-
-        if !script.contains(MAIN_BLOCK_START) || !script.contains(MAIN_BLOCK_END) {
-            return Err(Error::msg("Script does not contain main block"));
-        }
-
-        let minified_script = remove_tabs_and_multiple_whitespace(script);
-
-        let main_block = minified_script
-            .replace(MAIN_BLOCK_START, "")
-            .replace(MAIN_BLOCK_END, "")
-            .trim()
-            .to_string();
-
-        let executions = parse_execution_step(main_block)?;
-
-        Ok(Script {
-            id: script_id,
-            executions,
-        })
+        parse_script_code(script_id, script_model.get_code())
     }
 
     pub fn get_id(&self) -> i32 {
@@ -1237,5 +1295,401 @@ impl Script {
         }
 
         Ok(CommandFunctionResult::Return(Value::None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(code: &str) -> Result<Script> {
+        parse_script_code(1, code)
+    }
+
+    fn run(code: &str) -> Result<Variables> {
+        let script = parse(code)?;
+        let mut variables = Variables::new();
+        let result = run_inner_executions(&script.executions, &mut variables);
+
+        match result {
+            CommandFunctionResult::Error(e) => Err(Error::msg(e)),
+            _ => Ok(variables),
+        }
+    }
+
+    fn parse_err(code: &str) -> String {
+        parse(code).err().expect("expected parse error").to_string()
+    }
+
+    fn command_arguments(execution: &ScriptExecution) -> Vec<Value> {
+        match execution {
+            ScriptExecution::Command(command) => {
+                command.get_arguments().clone().unwrap_or_default()
+            }
+            ScriptExecution::Block(_) => panic!("expected a command"),
+        }
+    }
+
+    // ── Tokenizer / argument parsing ────────────────────────────────────────
+
+    #[test]
+    fn tokenize_keeps_quoted_spans_together() {
+        assert_eq!(
+            tokenize(r#"SEND_TO_DASHBOARD "hello   world" now"#),
+            vec![
+                "SEND_TO_DASHBOARD".to_string(),
+                "\"hello   world\"".to_string(),
+                "now".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_tabs_and_repeated_spaces() {
+        assert_eq!(
+            tokenize("SET\t$a    1"),
+            vec!["SET".to_string(), "$a".to_string(), "1".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_argument_supports_all_value_types() {
+        assert_eq!(parse_argument("42".to_string()), Value::Int32(42));
+        assert_eq!(parse_argument("3.5".to_string()), Value::Float64(3.5));
+        assert_eq!(parse_argument("true".to_string()), Value::Boolean(true));
+        assert_eq!(parse_argument("false".to_string()), Value::Boolean(false));
+        assert_eq!(
+            parse_argument("$name".to_string()),
+            Value::Variable("$name".to_string())
+        );
+        assert_eq!(
+            parse_argument("\"a b\"".to_string()),
+            Value::String("a b".to_string())
+        );
+        assert_eq!(
+            parse_argument("[1, 2]".to_string()),
+            Value::Array(vec![Value::Int32(1), Value::Int32(2)])
+        );
+        assert_eq!(
+            parse_argument("not-a-number".to_string()),
+            Value::String("not-a-number".to_string())
+        );
+    }
+
+    // ── Main block parsing ──────────────────────────────────────────────────
+
+    #[test]
+    fn script_requires_main_block() {
+        let err = parse_err("SET $a 1");
+        assert!(err.contains("start with RUN"), "{err}");
+
+        let err = parse_err("RUN\nSET $a 1");
+        assert!(err.contains("end with STOP"), "{err}");
+
+        let err = parse_err("");
+        assert!(err.contains("main block"), "{err}");
+    }
+
+    #[test]
+    fn script_allows_blank_lines_around_main_block() {
+        let script = parse("\n\nRUN\nSET $a 1\nSTOP\n\n").unwrap();
+        assert_eq!(script.get_id(), 1);
+    }
+
+    #[test]
+    fn script_preserves_run_and_stop_inside_strings() {
+        let script = parse("RUN\nSEND_TO_DASHBOARD \"RUN STOP\"\nSTOP").unwrap();
+        let args = command_arguments(&script.executions[0]);
+        assert_eq!(args[0], Value::String("RUN STOP".to_string()));
+    }
+
+    #[test]
+    fn script_preserves_multiple_spaces_inside_quoted_message() {
+        let script = parse("RUN\nSEND_TO_DASHBOARD \"a   b\"\nSTOP").unwrap();
+        let args = command_arguments(&script.executions[0]);
+        assert_eq!(args[0], Value::String("a   b".to_string()));
+    }
+
+    #[test]
+    fn script_rejects_unknown_command() {
+        let err = parse_err("RUN\nFLY 1\nSTOP");
+        assert!(err.contains("Unknown command"), "{err}");
+    }
+
+    #[test]
+    fn script_rejects_unexpected_end() {
+        let err = parse_err("RUN\nEND\nSTOP");
+        assert!(err.contains("Unexpected END"), "{err}");
+    }
+
+    #[test]
+    fn script_rejects_missing_block_end() {
+        let err = parse_err("RUN\nIF 1 == 1 THEN\nSET $a 1\nSTOP");
+        assert!(err.contains("Missing block end"), "{err}");
+    }
+
+    #[test]
+    fn script_rejects_missing_block_start() {
+        let err = parse_err("RUN\nIF 1 == 1\nEND\nSTOP");
+        assert!(err.contains("Missing block start"), "{err}");
+    }
+
+    // ── Execution: commands ─────────────────────────────────────────────────
+
+    #[test]
+    fn script_runs_multiple_sequential_commands() {
+        // Regression: the old minifier collapsed newlines, so these were parsed
+        // as a single SET with four arguments.
+        let variables = run("RUN\nSET $a 1\nADD $a 1\nSTOP").unwrap();
+        assert_eq!(variables.get("$a"), Some(&Value::Float64(2.0)));
+    }
+
+    #[test]
+    fn script_runs_arithmetic_commands() {
+        let variables = run(
+            "RUN\n\
+             SET $a 10\n\
+             ADD $a 5\n\
+             SUBTRACT $a 3\n\
+             MULTIPLY $a 2\n\
+             DIVIDE $a 4\n\
+             MODULO $a 4\n\
+             STOP",
+        )
+        .unwrap();
+
+        // (10 + 5 - 3) * 2 / 4 = 6, 6 % 4 = 2
+        assert_eq!(variables.get("$a"), Some(&Value::Float64(2.0)));
+    }
+
+    #[test]
+    fn script_unset_marks_variable_as_none() {
+        let variables = run("RUN\nSET $a 1\nUNSET $a\nSTOP").unwrap();
+        assert_eq!(variables.get("$a"), Some(&Value::None));
+    }
+
+    #[test]
+    fn script_rejects_wrong_argument_count() {
+        let err = run("RUN\nSET $a\nSTOP").unwrap_err().to_string();
+        assert!(err.contains("Invalid number of arguments"), "{err}");
+    }
+
+    #[test]
+    fn script_rejects_undefined_variable_in_arithmetic() {
+        let err = run("RUN\nADD $missing 1\nSTOP").unwrap_err().to_string();
+        assert!(err.contains("Variable not found"), "{err}");
+    }
+
+    #[test]
+    fn script_rejects_invalid_delay() {
+        let err = run("RUN\nDELAY \"soon\"\nSTOP").unwrap_err().to_string();
+        assert!(err.contains("Invalid DELAY value"), "{err}");
+    }
+
+    #[test]
+    fn script_division_by_zero_does_not_panic() {
+        let variables = run("RUN\nSET $a 10\nDIVIDE $a 0\nSTOP").unwrap();
+
+        match variables.get("$a") {
+            Some(Value::Float64(value)) => assert!(value.is_infinite()),
+            other => panic!("expected infinite float, got {other:?}"),
+        }
+    }
+
+    // ── Execution: control flow ─────────────────────────────────────────────
+
+    #[test]
+    fn script_runs_if_block() {
+        let variables = run("RUN\nIF 1 == 1 THEN\nSET $a 1\nEND\nSTOP").unwrap();
+        assert_eq!(variables.get("$a"), Some(&Value::Int32(1)));
+    }
+
+    #[test]
+    fn script_skips_if_block_when_condition_is_false() {
+        let variables = run("RUN\nIF 1 == 2 THEN\nSET $a 1\nEND\nSTOP").unwrap();
+        assert!(!variables.contains_key("$a"));
+    }
+
+    #[test]
+    fn script_accepts_then_on_the_following_line() {
+        let variables = run("RUN\nIF 1 == 1\nTHEN\nSET $a 1\nEND\nSTOP").unwrap();
+        assert_eq!(variables.get("$a"), Some(&Value::Int32(1)));
+    }
+
+    #[test]
+    fn script_accepts_inline_body_after_then() {
+        let variables = run("RUN\nIF 1 == 1 THEN SET $a 1\nEND\nSTOP").unwrap();
+        assert_eq!(variables.get("$a"), Some(&Value::Int32(1)));
+    }
+
+    #[test]
+    fn script_runs_sequential_blocks() {
+        // Regression: parse_block used to consume everything up to the last
+        // END, so a second top-level block made the script unparseable.
+        let variables = run(
+            "RUN\n\
+             IF 1 == 1 THEN\n\
+             SET $a 1\n\
+             END\n\
+             IF 1 == 1 THEN\n\
+             SET $b 2\n\
+             END\n\
+             STOP",
+        )
+        .unwrap();
+
+        assert_eq!(variables.get("$a"), Some(&Value::Int32(1)));
+        assert_eq!(variables.get("$b"), Some(&Value::Int32(2)));
+    }
+
+    #[test]
+    fn script_runs_nested_blocks() {
+        let variables = run(
+            "RUN\n\
+             IF 1 == 1 THEN\n\
+             IF 2 == 2 THEN\n\
+             SET $nested 1\n\
+             END\n\
+             END\n\
+             STOP",
+        )
+        .unwrap();
+
+        assert_eq!(variables.get("$nested"), Some(&Value::Int32(1)));
+    }
+
+    #[test]
+    fn script_skips_nested_block_when_outer_condition_is_false() {
+        let variables = run(
+            "RUN\n\
+             IF 1 == 2 THEN\n\
+             IF 2 == 2 THEN\n\
+             SET $nested 1\n\
+             END\n\
+             END\n\
+             STOP",
+        )
+        .unwrap();
+
+        assert!(!variables.contains_key("$nested"));
+    }
+
+    #[test]
+    fn script_while_loop_runs_until_condition_is_false() {
+        let variables = run(
+            "RUN\n\
+             SET $i 0\n\
+             WHILE $i < 3 THEN\n\
+             ADD $i 1\n\
+             END\n\
+             STOP",
+        )
+        .unwrap();
+
+        assert_eq!(variables.get("$i"), Some(&Value::Float64(3.0)));
+    }
+
+    #[test]
+    fn script_loop_stops_on_break() {
+        let variables = run(
+            "RUN\n\
+             SET $i 0\n\
+             LOOP THEN\n\
+             ADD $i 1\n\
+             BREAK\n\
+             END\n\
+             STOP",
+        )
+        .unwrap();
+
+        assert_eq!(variables.get("$i"), Some(&Value::Float64(1.0)));
+    }
+
+    #[test]
+    fn script_loop_hits_iteration_limit() {
+        let err = run("RUN\nLOOP THEN\nCONTINUE\nEND\nSTOP")
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("exceeded maximum iterations"), "{err}");
+    }
+
+    #[test]
+    fn script_parses_every_function_command() {
+        let script = parse(
+            "RUN\n\
+             ACTIVATE 1\n\
+             DEACTIVATE 1\n\
+             PULSE 1\n\
+             READ 2\n\
+             SEND_TO_DASHBOARD \"hi\"\n\
+             SET $a 1\n\
+             UNSET $a\n\
+             ADD $a 1\n\
+             SUBTRACT $a 1\n\
+             MULTIPLY $a 1\n\
+             DIVIDE $a 1\n\
+             MODULO $a 1\n\
+             DELAY 0\n\
+             INTERMITTENT 1 1 1000\n\
+             STOP_INTERMITTENT 1\n\
+             STOP",
+        );
+
+        assert!(script.is_ok(), "{:?}", script.err());
+    }
+
+    #[test]
+    fn script_accepts_crlf_line_endings() {
+        let script = parse("RUN\r\nSET $a 1\r\nADD $a 1\r\nSTOP\r\n").unwrap();
+        let mut variables = Variables::new();
+        let result = run_inner_executions(&script.executions, &mut variables);
+
+        assert!(!result.is_error());
+        assert_eq!(variables.get("$a"), Some(&Value::Float64(2.0)));
+    }
+
+    #[test]
+    fn script_rejects_loop_without_then() {
+        let err = parse_err("RUN\nLOOP\nEND\nSTOP");
+        assert!(err.contains("Missing block start"), "{err}");
+    }
+
+    // ── Value rendering ─────────────────────────────────────────────────────
+
+    #[test]
+    fn value_to_string_resolves_nested_variables() {
+        let mut variables = Variables::new();
+        variables.insert("$a".to_string(), Value::Variable("$b".to_string()));
+        variables.insert("$b".to_string(), Value::Int32(7));
+
+        assert_eq!(Value::Variable("$a".to_string()).to_string(&variables), "7");
+    }
+
+    #[test]
+    fn value_to_string_bounds_variable_cycles() {
+        // Regression: the old depth check recursed into the same cycle forever.
+        let mut variables = Variables::new();
+        variables.insert("$a".to_string(), Value::Variable("$b".to_string()));
+        variables.insert("$b".to_string(), Value::Variable("$a".to_string()));
+
+        assert_eq!(Value::Variable("$a".to_string()).to_string(&variables), "");
+    }
+
+    #[test]
+    fn value_to_string_formats_arrays_without_trailing_separator() {
+        let value = Value::Array(vec![Value::Int32(1), Value::Int32(2)]);
+        assert_eq!(value.to_string(&Variables::new()), "[1, 2]");
+    }
+
+    #[test]
+    fn compute_message_replaces_known_variables_only() {
+        let mut variables = Variables::new();
+        variables.insert("$a".to_string(), Value::Int32(5));
+
+        assert_eq!(
+            compute_message_with_variables("value=$a missing=$b".to_string(), &variables),
+            "value=5 missing=$b"
+        );
     }
 }
